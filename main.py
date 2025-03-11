@@ -36,9 +36,12 @@ class TaiwanFuturesTrader:
                                     columns=['Open', 'High', 'Low', 'Close', 'Volume'])
 
     def login(self):
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
         self.api.login(
-            api_key="XXXXXXXX",
-            secret_key="XXXXXXXX",
+            api_key=os.getenv('API_KEY'),
+            secret_key=os.getenv('SECRET_KEY'),
             contracts_cb=True,
             simulation=True
         )
