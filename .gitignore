@@ -21,3 +21,37 @@ shioaji.log
 
 # Environment variables
 .env
+
+API_README.md
+ContractDownloadTest/
+TCEM_SINO_PROD.exe
+api_client_example.py
+auto_commit.ps1
+auto_trader.py
+auto_trader_manager.py
+build/
+changelog.txt
+core/
+dist/
+gateway/
+index.js
+indicators.py
+login.py
+modules/
+order_test.py
+risk_config.json
+signal_generator.py
+strategies.py
+strategy_params_dialog.py
+ta-lib.zip
+talib.py
+test_shioaji_ca_contracts.py
+test_shioaji_contracts.py
+trading_app.spec
+"\345\215\207\347\264\232\_shioaji\_\350\210\207\_pysolace.bat"
+"\345\217\260\346\214\207\346\234\237\344\272\244\346\230\223\347\263\273\347\265\261.spec"
+"\345\225\237\345\213\225JoJoTrading\344\270\273\347\250\213\345\274\217.bat"
+"\345\225\237\345\213\225\345\267\246\345\201\264\344\273\224\347\211\271\345\203\271\345\215\200\344\273\213\351\235\242.bat"
+"\345\237\267\350\241\214\_shioaji\345\220\210\347\264\204\346\270\254\350\251\246.bat"
+"\345\237\267\350\241\214\_shioaji\346\206\221\350\255\211\345\225\237\347\224\250\350\210\207\345\220\210\347\264\204\346\270\254\350\251\246.bat"
+"\346\216\222\346\237\245\_shioaji\345\220\210\347\264\204\347\202\2720\350\231\225\347\220\206\347\264\200\351\214\204.md"
