@@ -28,6 +28,19 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 import mplfinance as mpf
 import io
 from  typing import Dict, Optional, Any # Import typing for hints
+import sys # 新增
+import argparse
+from modules.left_value_zone import left_value_zone
+from modules.left_value_zone_notify import send_line_notify
+import csv
+
+# 強制 stdout 使用 UTF-8 編碼
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+        print("Stdout encoding set to utf-8") # Debug message
+    except Exception as e:
+        print(f"Failed to set stdout encoding: {e}")
 
 # 檢查 PIL 是否安裝
 try:
@@ -1153,7 +1166,7 @@ class TradingWindow(QMainWindow):
         input_codes_str = self.valuation_stock_input.text().strip()
         selected_codes = []
         if input_codes_str:
-            selected_codes = [code.strip() for code in input_codes_str.split(',') if code.strip()]
+            selected_codes = [s.strip() for s in input_codes_str.split(",") if s.strip()]
         else:
             selected_items = self.stock_table.selectedItems()
             if selected_items:
@@ -1170,6 +1183,13 @@ class TradingWindow(QMainWindow):
             QMessageBox.warning(self, "警告", "請至少選擇或輸入一檔股票")
             return
 
+        min_profit_str = self.min_profit_input.text()
+        try:
+            min_profit = float(min_profit_str)
+        except ValueError:
+            QMessageBox.warning(self, "警告", "最低潛在報酬率必須是數字")
+            return
+
         # 設定路徑
         script_dir = os.path.dirname(__file__)
         project_root = os.path.abspath(os.path.join(script_dir, ".."))
@@ -1183,22 +1203,33 @@ class TradingWindow(QMainWindow):
         QApplication.processEvents()
 
         try:
-            results = calculate_value(selected_codes, template_path, output_dir)
+            # 執行估值並取得結果
+            results = left_value_zone(selected_codes, template_path, output_dir)
+
+            # 過濾結果
+            filtered = []
+            if results:  # 確保 results 不是 None
+                for r in results:
+                    try:
+                        if r["profit_rate"] is not None and r["profit_rate"] > min_profit:
+                            filtered.append(r)
+                    except Exception:
+                        continue
+
+            # 準備顯示結果
             self.valuation_result_text.append("\n--- 估值結果 ---")
-            if results:
-                for res in results:
-                    self.valuation_result_text.append(f"股票: {res.get('stock_id', 'N/A')}")
-                    if res.get("error"):
-                        self.valuation_result_text.append(f"  錯誤: {res['error']}")
-                    else:
-                        self.valuation_result_text.append(f"  現價: {res.get('price', '--')}")
-                        self.valuation_result_text.append(f"  EPS: {res.get('eps', '--')}")
-                        self.valuation_result_text.append(f"  成長率: {res.get('growth', '--')}%")
-                        self.valuation_result_text.append(f"  估算價值: {res.get('stock_value', '--')}")
-                        self.valuation_result_text.append(f"  潛在報酬率: {res.get('profit_rate', '--')}%")
+            if filtered:
+                for r in filtered:
+                    self.valuation_result_text.append(f"股票: {r['stock_id']}")
+                    self.valuation_result_text.append(f"  現價: {r.get('price', '--')}")
+                    self.valuation_result_text.append(f"  EPS: {r.get('eps', '--')}")
+                    self.valuation_result_text.append(f"  成長率: {r.get('growth', '--')}%")
+                    self.valuation_result_text.append(f"  估算價值: {r.get('stock_value', '--')}")
+                    self.valuation_result_text.append(f"  潛在報酬率: {r.get('profit_rate', '--')}%")
                     self.valuation_result_text.append("-" * 15)
             else:
-                self.valuation_result_text.append("估值計算未返回結果或失敗。")
+                self.valuation_result_text.append("無符合條件個股")
+
         except Exception as e:
             self.valuation_result_text.append(f"\n執行估值時發生未預期錯誤: {e}")
             import traceback
@@ -1209,7 +1240,6 @@ class TradingWindow(QMainWindow):
         QMessageBox.information(self, "提示", "回測功能正在重構中。")
 import sys
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
-                             QLabel, QPushButton, QTableWidget, QTableWidgetItem, QComboBox,
                              QGroupBox, QFormLayout, QDateEdit, QSpinBox, QDoubleSpinBox,
                              QTabWidget, QHeaderView, QMenuBar, QMenu, QMessageBox,
                              QDialog, QLineEdit, QDialogButtonBox, QCheckBox, QApplication,
