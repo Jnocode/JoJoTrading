@@ -10,3 +10,5 @@ PyQt6>=6.4.0
 yahoo_fin>=0.8.9 # 新增：用於抓取 Yahoo Finance 數據
 requests_html>=0.10.0 # 新增：yahoo_fin 的依賴
 html5lib>=1.1 # 新增：pandas read_html 需要的解析器
+matplotlib>=3.0.0 # 新增：用於繪製圖表
+mplfinance>=0.12.0 # 新增：用於繪製 K 線圖

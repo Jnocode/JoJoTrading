@@ -10,10 +10,29 @@ if exist ".venv\Scripts\python.exe" (
     set PYTHON_EXE=venv\Scripts\python.exe
 ) else (
     set PYTHON_EXE=python
+    set VENV_ACTIVATED=0
 )
 
 echo Starting JoJoTrading Quant System...
-"%PYTHON_EXE%" gui.py
+
+rem Try to activate venv and run python
+if "%PYTHON_EXE%" NEQ "python" (
+    echo Activating virtual environment: %PYTHON_EXE%
+    call "%SCRIPT_DIR%venv\Scripts\activate.bat"
+    if errorlevel 1 (
+         echo [WARNING] Failed to activate venv using 'call'. Trying direct execution.
+         "%PYTHON_EXE%" gui.py
+    ) else (
+         echo Virtual environment activated. Running gui.py...
+         python gui.py
+         set VENV_ACTIVATED=1
+    )
+) else (
+     echo No virtual environment found, using system python.
+     "%PYTHON_EXE%" gui.py
+)
+
+
 if errorlevel 1 (
     echo.
     echo [ERROR] Failed to launch. Please check if Python or virtual environment exists.
