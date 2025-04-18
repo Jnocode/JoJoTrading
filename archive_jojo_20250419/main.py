@@ -16,6 +16,7 @@ from core.event import EventEngine
 from gui import TradingWindow
 # Import the new App
 from modules.left_value_zone_app import LeftValueZoneApp
+from modules.market_data_app import MarketDataApp
 # 移除舊導入
 # import numpy as np
 # import shioaji as sj
@@ -71,8 +72,11 @@ def main():
     # main_engine.add_app(CtaStrategyApp) # Example for future futures app
     # main_engine.add_app(DataRecorderApp) # Example for data recorder app
 
-    # --- Add LeftValueZoneApp ---
+    # --- Add MarketDataApp & LeftValueZoneApp ---
+    main_engine.add_app(MarketDataApp)
+    main_engine.start_app("MarketData")
     main_engine.add_app(LeftValueZoneApp)
+    main_engine.start_app("LeftValueZone")
     # ---
 
     # 創建並顯示 GUI 主窗口

@@ -21,17 +21,16 @@ if "%PYTHON_EXE%" NEQ "python" (
     call "%SCRIPT_DIR%venv\Scripts\activate.bat"
     if errorlevel 1 (
          echo [WARNING] Failed to activate venv using 'call'. Trying direct execution.
-         "%PYTHON_EXE%" gui.py
+         "%PYTHON_EXE%" main.py
     ) else (
-         echo Virtual environment activated. Running gui.py...
-         python gui.py
+         echo Virtual environment activated. Running main.py...
+         python main.py
          set VENV_ACTIVATED=1
     )
 ) else (
      echo No virtual environment found, using system python.
-     "%PYTHON_EXE%" gui.py
+     "%PYTHON_EXE%" main.py
 )
-
 
 if errorlevel 1 (
     echo.
