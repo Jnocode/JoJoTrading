@@ -64,6 +64,11 @@
 -   `requirements.txt`: Python 依賴套件列表。
 -   `DEVELOPER_LOG.md`: 開發日誌。
 -   `.clinerules/`: 專案特定的 Cline 開發規則。
+-   `STREAMLIT_ARCH_DIAGRAM.md`: 包含整體架構圖 (類圖、序列圖) 的 Mermaid 原始碼。
+-   `class_diagram.mmd`: 類圖的獨立 Mermaid 原始碼檔案。
+-   `sequence_diagram.mmd`: 序列圖的獨立 Mermaid 原始碼檔案。
+-   `class_diagram.svg`: (手動生成) 類圖的 SVG 圖片檔案。
+-   `sequence_diagram.svg`: (手動生成) 序列圖的 SVG 圖片檔案。
 -   `.venv/`: (自動生成) Python 虛擬環境。
 
 ---
@@ -77,6 +82,7 @@
     *   從損益表中提取 EPS 和主要營收。
     *   初步的 Streamlit UI 框架，可驅動流程。
     *   DCF 估值函式的初步骨架。
+    *   產生了專案架構的類圖和序列圖 (Mermaid 原始碼及 SVG 圖片)。
 -   **待辦事項**:
     *   **完善 DCF 估值邏輯**: 在 `data_handler.calculate_dcf_valuation` 中實現完整的 DCF 計算，包括更合理的 FCF 估算、成長率假設、WACC（或折現率）的計算。
     *   **獲取更多財務數據**: 根據 DCF 模型需求，可能需要從資產負債表、現金流量表獲取更多數據，需擴充 `data_handler.py`。

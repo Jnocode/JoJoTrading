@@ -44,6 +44,12 @@
 - **後續狀態實作**：`FilteringState`, `ResultsDisplayState` (真實數據展示), `ExportState` 仍為模擬邏輯。
 - **錯誤處理與UI反饋**：需要增強各狀態的錯誤處理和在 Streamlit UI 上的用戶友好反饋。
 
+### 8. 架構圖生成
+- 在 `STREAMLIT_ARCH_DIAGRAM.md` 中編寫了類圖和序列圖的 Mermaid 語法。
+- 將 Mermaid 語法分別提取到 `class_diagram.mmd` 和 `sequence_diagram.mmd`。
+- 指導了如何使用線上 Mermaid 編輯器將 `.mmd` 檔案轉換為 SVG 圖片。
+- 使用者已成功生成 `class_diagram.svg` 和 `sequence_diagram.svg` 並存放於專案根目錄。
+
 ---
 
 ## 2025-05-05 專案需求確認與技術選型討論紀錄
