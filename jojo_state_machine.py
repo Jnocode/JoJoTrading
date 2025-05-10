@@ -2,14 +2,17 @@ from enum import Enum, auto
 import json
 import os
 from dotenv import load_dotenv
-    # import requests # requests 的使用已移至 data_handler.py
+import requests 
+import data_handler # 確保 data_handler 模組被正確引用
 from data_handler import (
     get_all_companies_basic_data,
     filter_industry_stocks,
-    get_financial_reports_for_stock, 
+    get_financial_reports_for_stock,
     fetch_stock_financials_from_downloaded,
-    _fetch_stock_financials_simulated, # 如果需要備援模擬
-    calculate_dcf_valuation # 新增匯入
+    get_balance_sheet_data_for_stock, # 新增導入
+    fetch_balance_sheet_items_from_downloaded, # 新增導入
+    _fetch_stock_financials_simulated, 
+    calculate_dcf_valuation
 )
 
 class JoJoState(Enum):
@@ -22,55 +25,36 @@ class JoJoState(Enum):
     RESULTS_DISPLAY = auto()
     EXPORT = auto()
     ERROR = auto()
-    END = auto() # 新增一個結束狀態
+    END = auto()
 
 class BaseState:
     def execute(self, context):
-        """
-        執行此狀態的邏輯。
-        應返回下一個狀態的 JoJoState 枚舉成員。
-        context 是一個字典或物件，用於在狀態之間傳遞資料。
-        """
         raise NotImplementedError("每個狀態都必須實現 execute 方法")
 
     def on_enter(self, context):
-        """
-        進入此狀態時執行的邏輯 (可選)。
-        """
         print(f"Entering state: {self.__class__.__name__}")
 
     def on_exit(self, context):
-        """
-        離開此狀態時執行的邏輯 (可選)。
-        """
         pass
 
-# --- 狀態類別定義 (初步骨架) ---
 class ConfigLoadState(BaseState):
     def execute(self, context):
         print("Executing ConfigLoadState: 載入設定檔...")
         try:
-            # 載入 .env 檔案
             load_dotenv()
-            # 這裡可以讀取環境變數，例如 API 金鑰
-            # context['api_key_shioaji'] = os.getenv('SHIOAJI_API_KEY')
-            # context['api_secret_shioaji'] = os.getenv('SHIOAJI_SECRET_KEY')
-            # print("  .env 檔案已載入。")
-
-            # 載入 industries.json
+            
             config_file_path = 'industries.json'
             if os.path.exists(config_file_path):
                 with open(config_file_path, 'r', encoding='utf-8') as f:
                     app_config = json.load(f)
                 industries_data = app_config.get('industries', [])
-                context['industries_full_data'] = industries_data # 儲存包含名稱和代號的完整列表
-                context['industry_names'] = [item.get('name') for item in industries_data if item.get('name')] # 僅名稱列表，用於UI
+                context['industries_full_data'] = industries_data 
+                context['industry_names'] = [item.get('name') for item in industries_data if item.get('name')] 
                 context['industry_name_to_code_map'] = {item.get('name'): item.get('code') for item in industries_data if item.get('name') and item.get('code')}
-                
                 context['default_risk_premium'] = app_config.get('default_risk_premium', 0.04)
                 context['risk_premium_options'] = app_config.get('risk_premium_options', {})
-                print(f"  {config_file_path} 已載入。")
-                print(f"  偵測到產業數量: {len(context['industry_names'])}")
+                context['simulated_data'] = app_config.get('simulated_data', {})
+                print(f"  {config_file_path} 已載入。偵測到產業數量: {len(context['industry_names'])}")
             else:
                 print(f"  錯誤: {config_file_path} 找不到。將使用預設空值。")
                 context['industries_full_data'] = []
@@ -78,9 +62,7 @@ class ConfigLoadState(BaseState):
                 context['industry_name_to_code_map'] = {}
                 context['default_risk_premium'] = 0.04
                 context['risk_premium_options'] = {}
-                # 也可以選擇在此處觸發錯誤狀態
-                # context['error_message'] = f"{config_file_path} 找不到。"
-                # return JoJoState.ERROR
+                context['simulated_data'] = {} 
 
             context['config_loaded'] = True
             print("ConfigLoadState 完成。")
@@ -94,91 +76,192 @@ class ConfigLoadState(BaseState):
 class UiInitState(BaseState):
     def execute(self, context):
         print("Executing UiInitState: 初始化 Streamlit UI...")
-        # TODO: 實作 UI 初始化，等待使用者輸入
-        # selected_industry_name 將由 app.py 中的 UI 設定到 context
-        # risk_preference 也將由 app.py 中的 UI 設定到 context
-        # 此處的範例值主要用於非 Streamlit 的簡易測試
         if 'selected_industry_name' not in context and context.get('industry_names'):
-            context['selected_industry_name'] = context['industry_names'][0] # 預設選第一個
+            context['selected_industry_name'] = context['industry_names'][0] 
         if 'risk_preference' not in context:
             context['risk_preference'] = context.get('default_risk_premium', 0.04)
+        if 'developer_mode' not in context: 
+            context['developer_mode'] = False
+            print("  (UiInitState) developer_mode 未在 context 中找到，預設為 False。")
+
+        if context.get('developer_mode', False):
+            print("  (UiInitState) 開發者模式已啟用。")
         
-        # 這裡的邏輯會比較複雜，因為 Streamlit 是事件驅動的
-        # 狀態機可能需要與 Streamlit 的 session state 互動
-        # 暫時假設使用者已互動並觸發下一步
-        if context.get('user_clicked_filter_button'): # 假設這個由 Streamlit callback 設定
+        if context.get('user_clicked_filter_button'): 
             return JoJoState.INDUSTRY_PROCESS
-        return JoJoState.UI_INIT # 保持在 UI 狀態等待互動
+        return JoJoState.UI_INIT
 
 class IndustryProcessState(BaseState):
     def execute(self, context):
-        print(f"Executing IndustryProcessState: 處理產業 '{context.get('selected_industry')}'...")
-        # TODO: 根據選擇的產業進行初步處理 (如果需要)
+        print(f"Executing IndustryProcessState: 處理產業 '{context.get('selected_industry_name', '未指定')}'...")
         return JoJoState.DATA_FETCH
 
 class DataFetchState(BaseState):
-    # _get_all_companies_basic_data, _fetch_industry_stocks, _fetch_stock_financials
-    # 這三個方法已移至 data_handler.py
+    def _get_stock_prices(self, context):
+        if 'all_stock_day_prices' not in context:
+            print("  (DataFetchState) 正在獲取所有上市公司每日股價資料...")
+            stock_price_url = f"{data_handler.API_BASE_URL}/exchangeReport/STOCK_DAY_ALL" 
+            try:
+                print("    (DataFetchState) 警告：將嘗試禁用 SSL 憑證驗證 (verify=False) 來獲取股價。")
+                response = requests.get(stock_price_url, timeout=30, verify=False)
+                response.raise_for_status()
+                context['all_stock_day_prices'] = response.json()
+                print(f"    (DataFetchState) 成功獲取 {len(context['all_stock_day_prices'])} 筆股價記錄。")
+            except requests.exceptions.RequestException as e_price:
+                print(f"    (DataFetchState) 獲取股價資料時發生錯誤: {e_price}")
+                context['all_stock_day_prices'] = []
+            except json.JSONDecodeError as e_json_price:
+                print(f"    (DataFetchState) 解析股價資料 JSON 時發生錯誤: {e_json_price}")
+                context['all_stock_day_prices'] = []
+        return context.get('all_stock_day_prices', [])
 
     def execute(self, context):
         print("Executing DataFetchState: 抓取資料...")
+        
+        all_companies_data = get_all_companies_basic_data(context) 
+        if not all_companies_data:
+            context['error_message'] = "無法獲取上市公司基本資料。"
+            return JoJoState.ERROR
+
+        if context.get('developer_mode', False):
+            print("  (DataFetchState) 開發者模式啟用，使用模擬數據。")
+            sim_data = context.get('simulated_data', {})
+            ui_selected_industry = context.get('selected_industry_name')
+            sim_selected_industry = sim_data.get('selected_industry_name', "模擬產業")
+            context['selected_industry_name'] = ui_selected_industry if ui_selected_industry and ui_selected_industry != "N/A" else sim_selected_industry
+            
+            sim_industry_stocks_details_template = sim_data.get('industry_stocks_details', [])
+            sim_financial_data_template = sim_data.get('financial_data', {})
+            
+            temp_sim_industry_stocks_details = []
+            for stock_detail_sim_template in sim_industry_stocks_details_template:
+                stock_detail_sim = stock_detail_sim_template.copy()
+                stock_code_sim = stock_detail_sim['code']
+                
+                company_basic_info_sim = next((comp for comp in all_companies_data if comp.get("公司代號") == stock_code_sim), None)
+                if company_basic_info_sim:
+                    shares_outstanding_sim_str = company_basic_info_sim.get("已發行普通股數或TDR原股發行股數", "0")
+                    try:
+                        stock_detail_sim["shares_outstanding"] = float(str(shares_outstanding_sim_str).replace(",", ""))
+                    except ValueError:
+                        stock_detail_sim["shares_outstanding"] = 0.0
+                else:
+                    stock_detail_sim["shares_outstanding"] = 0.0 
+                
+                stock_sim_financials = sim_financial_data_template.get(stock_code_sim, {})
+                stock_detail_sim["current_market_price"] = stock_sim_financials.get("sim_price", 100.0) 
+                temp_sim_industry_stocks_details.append(stock_detail_sim)
+            
+            context['industry_stocks_details_list'] = temp_sim_industry_stocks_details
+            context['industry_stocks_list'] = [f"{s['code']} {s['name']}" for s in temp_sim_industry_stocks_details]
+            
+            final_sim_financial_data = {}
+            for stock_detail_final_sim in temp_sim_industry_stocks_details:
+                code = stock_detail_final_sim['code']
+                financials_entry = sim_financial_data_template.get(code, {}).copy()
+                financials_entry["shares_outstanding"] = stock_detail_final_sim.get("shares_outstanding", 0.0)
+                financials_entry["current_market_price"] = stock_detail_final_sim.get("current_market_price", 100.0)
+                financials_entry["stock_code"] = code
+                financials_entry["stock_name"] = stock_detail_final_sim.get("name", "N/A")
+                final_sim_financial_data[code] = financials_entry
+
+            context['financial_data'] = final_sim_financial_data
+            context['raw_data_fetched'] = True
+            print(f"  模擬數據已準備 for industry '{context['selected_industry_name']}': {len(context['industry_stocks_details_list'])} 支股票, {len(context['financial_data'])} 筆財務資料。")
+            return JoJoState.VALUATION
+
         selected_industry_name = context.get('selected_industry_name')
         industry_name_to_code_map = context.get('industry_name_to_code_map', {})
 
         if not selected_industry_name:
             context['error_message'] = "未選擇產業"
             return JoJoState.ERROR
-
         try:
-            # 0. 一次性獲取所有上市公司基本資料
-            all_companies_data = get_all_companies_basic_data(context) # 使用匯入的函式
-            if not all_companies_data:
-                context['error_message'] = "無法獲取上市公司基本資料。"
-                return JoJoState.ERROR
+            all_stock_prices = self._get_stock_prices(context) 
 
             print(f"  開始為產業 '{selected_industry_name}' 處理資料...")
-            # 1. 從已下載的完整公司列表中篩選出特定產業的成分股詳細資訊
-            industry_stocks_details = filter_industry_stocks(selected_industry_name, industry_name_to_code_map, all_companies_data) # 使用匯入的函式
+            industry_stocks_details = filter_industry_stocks(selected_industry_name, industry_name_to_code_map, all_companies_data)
             context['industry_stocks_details_list'] = industry_stocks_details
-            
             context['industry_stocks_list'] = [f"{s['code']} {s['name']}" for s in industry_stocks_details]
             print(f"  篩選後成分股詳細列表 ({selected_industry_name}):")
             for stock_detail_debug in industry_stocks_details[:3]: 
                 print(f"    {stock_detail_debug}")
             
-            # 2. 為每個成分股提取財務數據
             all_financial_data = {}
-            processed_report_types = set() # 用於記錄已下載過的報表類型，避免重複下載
+            processed_api_suffixes = set() 
 
             for stock_detail in industry_stocks_details: 
                 stock_code = stock_detail['code']
-                report_type = stock_detail['report_type']
+                print(f"  準備為 {stock_code} ({stock_detail['name']}) 提取財報與股價...")
                 
-                print(f"  準備為 {stock_code} ({stock_detail['name']}) 提取財報，其報表類型為: {report_type}")
-
-                # 根據 report_type 獲取對應的財報數據集 (如果尚未下載)
-                # get_financial_reports_for_stock 會處理下載並存入 context
-                # TODO: data_handler.py 中的 get_financial_reports_for_stock 內的映射表和判斷邏輯仍需完善
+                downloaded_reports, used_api_suffix = get_financial_reports_for_stock(stock_detail, context)
                 
-                # 呼叫 data_handler 中的函式，它會返回財報數據和使用的api_suffix
-                downloaded_reports, used_api_suffix = get_financial_reports_for_stock(stock_detail, context) # 修正呼叫的函式名稱，並傳入 stock_detail
-                                
-                if report_type not in processed_report_types and downloaded_reports: 
-                    processed_report_types.add(report_type) # 或者用 used_api_suffix 做記錄
+                if used_api_suffix not in processed_api_suffixes and downloaded_reports:
+                    processed_api_suffixes.add(used_api_suffix)
                 
                 financials = fetch_stock_financials_from_downloaded(stock_code, used_api_suffix, downloaded_reports)
+                financials["shares_outstanding"] = stock_detail.get("shares_outstanding", 0.0)
+                financials["stock_code"] = stock_code 
+                financials["stock_name"] = stock_detail.get("name", "N/A") 
+                
+                # # 暫時註釋掉獲取資產負債表項目的部分，因為目前API數據粒度不足
+                # downloaded_bs_reports, bs_api_suffix = get_balance_sheet_data_for_stock(stock_detail, context)
+                # balance_sheet_items_two_periods = fetch_balance_sheet_items_from_downloaded(stock_code, bs_api_suffix, downloaded_bs_reports)
+                
+                # if balance_sheet_items_two_periods and not balance_sheet_items_two_periods.get("error"):
+                #     # 更新 financials 字典以包含兩期數據
+                #     financials["accounts_receivable_t0"] = balance_sheet_items_two_periods.get("accounts_receivable_t0")
+                #     financials["inventories_t0"] = balance_sheet_items_two_periods.get("inventories_t0")
+                #     financials["accounts_payable_t0"] = balance_sheet_items_two_periods.get("accounts_payable_t0")
+                #     financials["bs_year_t0"] = balance_sheet_items_two_periods.get("bs_year_t0")
+                #     financials["bs_quarter_t0"] = balance_sheet_items_two_periods.get("bs_quarter_t0")
+
+                #     financials["accounts_receivable_t1"] = balance_sheet_items_two_periods.get("accounts_receivable_t1")
+                #     financials["inventories_t1"] = balance_sheet_items_two_periods.get("inventories_t1")
+                #     financials["accounts_payable_t1"] = balance_sheet_items_two_periods.get("accounts_payable_t1")
+                #     financials["bs_year_t1"] = balance_sheet_items_two_periods.get("bs_year_t1")
+                #     financials["bs_quarter_t1"] = balance_sheet_items_two_periods.get("bs_quarter_t1")
+                    
+                #     print(f"    (DataFetchState) 股票 {stock_code} T0 資產負債表項目: AR={financials.get('accounts_receivable_t0')}, INV={financials.get('inventories_t0')}, AP={financials.get('accounts_payable_t0')}")
+                #     if financials.get("bs_year_t1"): # 只有當 T-1 期數據存在時才打印
+                #         print(f"    (DataFetchState) 股票 {stock_code} T-1 資產負債表項目: AR={financials.get('accounts_receivable_t1')}, INV={financials.get('inventories_t1')}, AP={financials.get('accounts_payable_t1')}")
+                # else:
+                #     print(f"    (DataFetchState) 警告：股票 {stock_code} 未能獲取有效的資產負債表項目。錯誤: {balance_sheet_items_two_periods.get('error') if balance_sheet_items_two_periods else '未知資產負債表錯誤'}")
+                #     # 確保即使出錯，這些鍵也存在於 financials 中，值為 None
+                #     for period in ["t0", "t1"]:
+                #         financials[f"accounts_receivable_{period}"] = None
+                #         financials[f"inventories_{period}"] = None
+                #         financials[f"accounts_payable_{period}"] = None
+                #         financials[f"bs_year_{period}"] = None
+                #         financials[f"bs_quarter_{period}"] = None
+                print(f"    (DataFetchState) 暫不處理資產負債表數據，因API數據粒度不足。")
+
+                stock_price_info = next((price_data for price_data in all_stock_prices if price_data.get("Code") == stock_code), None)
+                if stock_price_info and stock_price_info.get("ClosingPrice"):
+                    try:
+                        closing_price_str = str(stock_price_info.get("ClosingPrice")).replace(",","")
+                        if closing_price_str and closing_price_str != "---" and closing_price_str.lower() != "nan":
+                            financials["current_market_price"] = float(closing_price_str)
+                        else:
+                            financials["current_market_price"] = None
+                            print(f"  (DataFetchState) 警告：股票 {stock_code} 的收盤價為無效字串 '{stock_price_info.get('ClosingPrice')}'。")
+                    except ValueError:
+                        print(f"  (DataFetchState) 警告：股票 {stock_code} 的收盤價 '{stock_price_info.get('ClosingPrice')}' 無法轉換為數字。")
+                        financials["current_market_price"] = None
+                else:
+                    print(f"  (DataFetchState) 警告：未找到股票 {stock_code} 的股價資訊。")
+                    financials["current_market_price"] = None
+                
                 all_financial_data[stock_code] = financials
             
             context['financial_data'] = all_financial_data
             context['raw_data_fetched'] = True
             
             if industry_stocks_details:
-                 print("  已嘗試為所有成分股提取財務數據。")
+                 print("  已嘗試為所有成分股提取財務數據和股價。")
             else:
-                print("  無成分股可供提取財務數據。")
-
+                print("  無成分股可供提取財務數據和股價。")
             return JoJoState.VALUATION
-
         except Exception as e:
             print(f"DataFetchState 執行時發生錯誤: {e}")
             context['error_message'] = f"資料抓取失敗: {e}"
@@ -188,24 +271,37 @@ class ValuationState(BaseState):
     def execute(self, context):
         print("Executing ValuationState: 進行 DCF 估值...")
         financial_data_map = context.get('financial_data', {})
-        risk_preference = context.get('risk_preference', 0.04) # 使用預設值以防萬一
+        risk_preference = context.get('risk_preference', 0.04) 
         
         valuation_results = []
-        
         if not financial_data_map:
             print("  (ValuationState) 警告: financial_data 為空，無法進行估值。")
         
         for stock_code, financials in financial_data_map.items():
-            print(f"  (ValuationState) 正在為股票 {stock_code} 進行估值...")
+            stock_name = financials.get("stock_name", stock_code) 
+
+            print(f"  (ValuationState) 正在為股票 {stock_code} ({stock_name}) 進行估值...")
             if financials and not financials.get("error"):
-                # 傳遞 stock_code, financials, risk_preference, 和完整的 context 給估值函式
-                # context 可能包含 dcf_short_term_growth_rate 等參數
-                valuation_result = calculate_dcf_valuation(stock_code, financials, risk_preference, context)
-                valuation_results.append(valuation_result)
-            else:
-                print(f"  (ValuationState) 股票 {stock_code} 缺少有效的財務數據，跳過估值。錯誤: {financials.get('error', '未知數據問題')}")
+                if "shares_outstanding" not in financials: 
+                    print(f"  (ValuationState) 警告: 股票 {stock_code} 的 financials 字典中缺少 'shares_outstanding'。跳過估值。")
+                    financials["error"] = "缺少流通股數資料" 
+                
+                if not financials.get("error"): 
+                    valuation_result = calculate_dcf_valuation(stock_code, financials, risk_preference, context)
+                    valuation_result['stock_name'] = stock_name 
+                    valuation_results.append(valuation_result)
+                else: 
+                    print(f"  (ValuationState) 股票 {stock_code} ({stock_name}) 因資料問題無法估值: {financials.get('error')}")
+                    valuation_results.append({
+                        "stock_code": stock_code,
+                        "stock_name": stock_name,
+                        "error": financials.get("error", "財務數據不足或錯誤，無法估值")
+                    })
+            else: 
+                print(f"  (ValuationState) 股票 {stock_code} ({stock_name}) 缺少有效的財務數據，跳過估值。錯誤: {financials.get('error', '未知數據問題')}")
                 valuation_results.append({
                     "stock_code": stock_code,
+                    "stock_name": stock_name,
                     "error": financials.get("error", "財務數據不足或錯誤，無法估值")
                 })
         
@@ -216,48 +312,90 @@ class ValuationState(BaseState):
 
 class FilteringState(BaseState):
     def execute(self, context):
-        print("Executing FilteringState: 篩選股票...")
-        # TODO: 實作基於估值結果的篩選邏輯
-        context['filtered_stocks'] = ["股票A", "股票B"] # 範例
+        print("Executing FilteringState: 篩選估值後的股票...")
+        valuation_results = context.get('valuation_results', [])
+        min_potential_return_threshold = context.get('min_potential_return_filter', 0.20) # 從 context 獲取，預設 0.20
+        
+        filtered_stocks = []
+        if not valuation_results:
+            print("  (FilteringState) 警告: valuation_results 為空，無法進行篩選。")
+        else:
+            print(f"  (FilteringState) 收到 {len(valuation_results)} 筆估值結果準備篩選。篩選潛在報酬 > {min_potential_return_threshold*100:.1f}%")
+            for result in valuation_results:
+                if result and not result.get("error"):
+                    intrinsic_value = result.get("intrinsic_value_per_share") 
+                    eps_to_check = result.get("source_eps") 
+                    potential_return = result.get("potential_return")
+                    current_market_price = result.get("current_market_price")
+                    
+                    valid_intrinsic = isinstance(intrinsic_value, (int, float))
+                    valid_eps_to_check = isinstance(eps_to_check, (int, float))
+                    
+                    # 潛在報酬率檢查邏輯
+                    passes_potential_return_check = False # 預設不通過，除非明確滿足條件
+                    if current_market_price is None or not isinstance(current_market_price, (int, float)) or current_market_price <= 0:
+                        # 如果沒有市價或市價無效，則無法計算潛在報酬，視為不滿足此篩選條件
+                        print(f"  (FilteringState) 股票 {result.get('stock_code')} ({result.get('stock_name')}) 因缺少有效市價，無法進行潛在報酬率篩選。")
+                    elif isinstance(potential_return, (int, float)):
+                        if potential_return > min_potential_return_threshold:
+                            passes_potential_return_check = True
+                    
+                    if valid_intrinsic and valid_eps_to_check and intrinsic_value > 0 and eps_to_check > 0 and passes_potential_return_check:
+                        filtered_stocks.append({
+                            "股票代號": result.get("stock_code"),
+                            "股票名稱": result.get("stock_name", "N/A"), 
+                            "內在價值": result.get("intrinsic_value_per_share"),
+                            "目前市價": result.get("current_market_price", "N/A"), 
+                            "潛在報酬": f"{potential_return*100:.1f}%" if isinstance(potential_return, (int, float)) else "N/A",
+                            "EPS (來源)": result.get("source_eps"),
+                            "FCFEps (計算)": result.get("calculated_fcf_eps"),
+                            "估值年度/季度": result.get("data_year_quarter"),
+                            "使用折現率": f"{result.get('used_discount_rate', 0)*100:.1f}%"
+                        })
+                    else:
+                        reason = []
+                        if not (valid_intrinsic and intrinsic_value > 0): reason.append(f"內在價值 ({intrinsic_value})")
+                        if not (valid_eps_to_check and eps_to_check > 0): reason.append(f"EPS ({eps_to_check})")
+                        if not passes_potential_return_check: reason.append(f"潛在報酬 ({potential_return if isinstance(potential_return, (int, float)) else 'N/A'}) 未達標 (> {min_potential_return_threshold*100:.1f}%)")
+                        print(f"  (FilteringState) 股票 {result.get('stock_code')} ({result.get('stock_name')}) 因 {', '.join(reason)} 不符條件而未被選入。")
+                else:
+                    print(f"  (FilteringState) 股票 {result.get('stock_code')} ({result.get('stock_name')}) 存在估值錯誤，已跳過: {result.get('error')}")
+            
+            print(f"  (FilteringState) 篩選完成，選出 {len(filtered_stocks)} 支股票。")
+
+        context['filtered_stocks'] = filtered_stocks
         return JoJoState.RESULTS_DISPLAY
 
 class ResultsDisplayState(BaseState):
     def execute(self, context):
         print(f"Executing ResultsDisplayState: 顯示結果 {context.get('filtered_stocks')}...")
-        # TODO: 在 Streamlit UI 上顯示結果
-        # 假設使用者選擇匯出或新查詢
         if context.get('user_clicked_export_button'):
             return JoJoState.EXPORT
         elif context.get('user_clicked_new_query_button'):
             return JoJoState.UI_INIT
-        return JoJoState.RESULTS_DISPLAY # 保持顯示，或設定超時返回 UI_INIT
+        return JoJoState.RESULTS_DISPLAY
 
 class ExportState(BaseState):
     def execute(self, context):
         print("Executing ExportState: 匯出結果...")
-        # TODO: 實作匯出邏輯
         context['export_completed'] = True
-        # 匯出後通常返回結果顯示或初始UI
         return JoJoState.RESULTS_DISPLAY 
 
 class ErrorState(BaseState):
     def execute(self, context):
         error_msg = context.get('error_message', "發生未知錯誤")
         print(f"Executing ErrorState: {error_msg}")
-        # TODO: 在 UI 上顯示錯誤訊息
-        # 這裡可以決定是結束還是返回初始狀態
-        return JoJoState.UI_INIT # 例如，讓使用者可以重試
+        return JoJoState.UI_INIT
 
 class EndState(BaseState):
     def execute(self, context):
         print("Executing EndState: 流程結束。")
-        return JoJoState.END # 保持在結束狀態
+        return JoJoState.END
 
-# --- 主狀態機 ---
 class JoJoStateMachine:
     def __init__(self):
         self.current_jojo_state_enum = JoJoState.CONFIG_LOAD
-        self.context = {} # 用於在狀態間傳遞資料
+        self.context = {} 
         self.states = {
             JoJoState.CONFIG_LOAD: ConfigLoadState(),
             JoJoState.UI_INIT: UiInitState(),
@@ -274,12 +412,6 @@ class JoJoStateMachine:
         self.max_consecutive_failures = 5
 
     def run(self):
-        """
-        執行狀態機。
-        注意：對於 Streamlit 這種 Web UI，狀態機的驅動方式可能需要調整，
-        例如，每次使用者互動後執行一次狀態轉換，而不是一個連續的 while 迴圈。
-        這裡的 run 方法是一個簡化的示意。
-        """
         while self.current_jojo_state_enum != JoJoState.END:
             current_state_obj = self.states.get(self.current_jojo_state_enum)
             if not current_state_obj:
@@ -287,22 +419,17 @@ class JoJoStateMachine:
                 self.context['error_message'] = f"無效狀態: {self.current_jojo_state_enum}"
                 self.current_jojo_state_enum = JoJoState.ERROR
                 continue
-
             try:
                 current_state_obj.on_enter(self.context)
                 next_state_enum = current_state_obj.execute(self.context)
                 current_state_obj.on_exit(self.context)
                 
                 if next_state_enum == self.current_jojo_state_enum and next_state_enum not in [JoJoState.UI_INIT, JoJoState.RESULTS_DISPLAY]:
-                    # 避免在非互動等待狀態下死循環，如果狀態未改變且不是等待使用者輸入的狀態
-                    # 這裡的判斷可能需要根據實際情況調整
                     print(f"警告：狀態 {self.current_jojo_state_enum} 執行後未改變，可能導致死循環。")
                     self.consecutive_failures +=1
                 else:
                     self.consecutive_failures = 0
-
                 self.current_jojo_state_enum = next_state_enum
-
             except Exception as e:
                 print(f"狀態 {self.current_jojo_state_enum} 執行時發生錯誤: {e}")
                 self.context['error_message'] = str(e)
@@ -311,9 +438,8 @@ class JoJoStateMachine:
             
             if self.consecutive_failures >= self.max_consecutive_failures:
                 print(f"連續 {self.max_consecutive_failures} 次失敗，狀態機停止。")
-                self.current_jojo_state_enum = JoJoState.END # 強制結束
-
-        # 最終結束狀態的處理
+                self.current_jojo_state_enum = JoJoState.END
+        
         final_state_obj = self.states.get(JoJoState.END)
         if final_state_obj:
             final_state_obj.on_enter(self.context)
@@ -321,73 +447,68 @@ class JoJoStateMachine:
         print("JoJoTrading State Machine 已停止。")
 
 if __name__ == "__main__":
-    # 簡易測試 (非 Streamlit 環境)
     print("開始 JoJoStateMachine 簡易測試...")
     machine = JoJoStateMachine()
     
-    # 模擬 Streamlit UI 互動觸發
-    # 第一次執行到 UI_INIT 後會停在那裡，因為 run 假設是連續的
-    # 為了測試，我們手動推進一下
-    
-    # 初始執行，應該會停在 UI_INIT 等待 'user_clicked_filter_button'
-    # machine.run() # 如果直接跑，會因為 UI_INIT 一直返回自身而可能觸發死循環警告
-    
-    # 讓我們模擬一個完整的流程
     machine.context['user_clicked_filter_button'] = False
     machine.context['user_clicked_export_button'] = False
     machine.context['user_clicked_new_query_button'] = False
+    machine.context['developer_mode'] = False 
 
-    # 1. Config Load -> UI Init
-    machine.current_jojo_state_enum = JoJoState.CONFIG_LOAD
-    current_state = machine.states[machine.current_jojo_state_enum]
-    machine.current_jojo_state_enum = current_state.execute(machine.context)
-    print(f"  -> 轉換到狀態: {machine.current_jojo_state_enum}")
+    # --- 模擬完整流程 ---
+    # 1. Config Load
+    machine.current_jojo_state_enum = machine.states[JoJoState.CONFIG_LOAD].execute(machine.context)
+    print(f"  -> 測試轉換到狀態: {machine.current_jojo_state_enum}")
+    
+    if machine.context.get('developer_mode'):
+        sim_data = machine.context.get('simulated_data', {})
+        machine.context['selected_industry_name'] = sim_data.get('selected_industry_name', "模擬-電子零組件")
+        machine.context['risk_preference'] = machine.context.get('default_risk_premium', 0.04)
+        print(f"  開發者模式：使用模擬產業 '{machine.context['selected_industry_name']}'")
+    else: 
+        machine.context['selected_industry_name'] = machine.context['industry_names'][24] # 電子零組件業
+        machine.context['risk_preference'] = 0.05 
+        print(f"  模擬UI選擇：產業 '{machine.context['selected_industry_name']}', 風險偏好 {machine.context['risk_preference']}")
 
-    # 2. UI Init (假設使用者點擊了篩選)
+    # 2. UI Init (假設使用者點擊了篩選) -> IndustryProcess
     machine.context['user_clicked_filter_button'] = True
-    current_state = machine.states[machine.current_jojo_state_enum]
-    machine.current_jojo_state_enum = current_state.execute(machine.context)
-    print(f"  -> 轉換到狀態: {machine.current_jojo_state_enum}")
-    machine.context['user_clicked_filter_button'] = False # 重置
+    machine.current_jojo_state_enum = machine.states[JoJoState.UI_INIT].execute(machine.context)
+    print(f"  -> 測試轉換到狀態: {machine.current_jojo_state_enum}")
+    machine.context['user_clicked_filter_button'] = False 
 
     # 3. Industry Process -> Data Fetch
-    current_state = machine.states[machine.current_jojo_state_enum]
-    machine.current_jojo_state_enum = current_state.execute(machine.context)
-    print(f"  -> 轉換到狀態: {machine.current_jojo_state_enum}")
+    machine.current_jojo_state_enum = machine.states[JoJoState.INDUSTRY_PROCESS].execute(machine.context)
+    print(f"  -> 測試轉換到狀態: {machine.current_jojo_state_enum}")
 
     # 4. Data Fetch -> Valuation
-    current_state = machine.states[machine.current_jojo_state_enum]
-    machine.current_jojo_state_enum = current_state.execute(machine.context)
-    print(f"  -> 轉換到狀態: {machine.current_jojo_state_enum}")
+    machine.current_jojo_state_enum = machine.states[JoJoState.DATA_FETCH].execute(machine.context)
+    print(f"  -> 測試轉換到狀態: {machine.current_jojo_state_enum}")
 
     # 5. Valuation -> Filtering
-    current_state = machine.states[machine.current_jojo_state_enum]
-    machine.current_jojo_state_enum = current_state.execute(machine.context)
-    print(f"  -> 轉換到狀態: {machine.current_jojo_state_enum}")
+    machine.current_jojo_state_enum = machine.states[JoJoState.VALUATION].execute(machine.context)
+    print(f"  -> 測試轉換到狀態: {machine.current_jojo_state_enum}")
 
     # 6. Filtering -> Results Display
-    current_state = machine.states[machine.current_jojo_state_enum]
-    machine.current_jojo_state_enum = current_state.execute(machine.context)
-    print(f"  -> 轉換到狀態: {machine.current_jojo_state_enum}")
+    machine.current_jojo_state_enum = machine.states[JoJoState.FILTERING].execute(machine.context)
+    print(f"  -> 測試轉換到狀態: {machine.current_jojo_state_enum}")
+    print(f"  篩選結果 (共 {len(machine.context.get('filtered_stocks', []))} 筆):")
+    for stock_info in machine.context.get('filtered_stocks', [])[:5]: # 最多顯示5筆
+        print(f"    {stock_info}")
     
-    # 7. Results Display (假設使用者點擊匯出)
+    # 7. Results Display (假設使用者點擊匯出) -> Export
     machine.context['user_clicked_export_button'] = True
-    current_state = machine.states[machine.current_jojo_state_enum]
-    machine.current_jojo_state_enum = current_state.execute(machine.context)
-    print(f"  -> 轉換到狀態: {machine.current_jojo_state_enum}")
-    machine.context['user_clicked_export_button'] = False # 重置
+    machine.current_jojo_state_enum = machine.states[JoJoState.RESULTS_DISPLAY].execute(machine.context)
+    print(f"  -> 測試轉換到狀態: {machine.current_jojo_state_enum}")
+    machine.context['user_clicked_export_button'] = False
 
     # 8. Export -> Results Display
-    current_state = machine.states[machine.current_jojo_state_enum]
-    machine.current_jojo_state_enum = current_state.execute(machine.context)
-    print(f"  -> 轉換到狀態: {machine.current_jojo_state_enum}")
+    machine.current_jojo_state_enum = machine.states[JoJoState.EXPORT].execute(machine.context)
+    print(f"  -> 測試轉換到狀態: {machine.current_jojo_state_enum}")
 
-    # 9. Results Display (假設使用者點擊新查詢)
+    # 9. Results Display (假設使用者點擊新查詢) -> UI_INIT
     machine.context['user_clicked_new_query_button'] = True
-    current_state = machine.states[machine.current_jojo_state_enum]
-    machine.current_jojo_state_enum = current_state.execute(machine.context)
-    print(f"  -> 轉換到狀態: {machine.current_jojo_state_enum}")
-    machine.context['user_clicked_new_query_button'] = False # 重置
+    machine.current_jojo_state_enum = machine.states[JoJoState.RESULTS_DISPLAY].execute(machine.context)
+    print(f"  -> 測試轉換到狀態: {machine.current_jojo_state_enum}")
+    machine.context['user_clicked_new_query_button'] = False 
 
     print("JoJoStateMachine 簡易測試結束。")
-    print("注意：實際 Streamlit 應用中，狀態機的驅動方式會不同。")
