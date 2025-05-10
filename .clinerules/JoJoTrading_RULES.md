@@ -61,3 +61,33 @@
 ## 7. Python 特定規則 (若適用)
 - **虛擬環境:** 建議使用虛擬環境 (如 venv, conda) 管理專案依賴。
 - **`requirements.txt`:** 專案依賴應記錄在 `requirements.txt` 檔案中。
+
+## 8. 開發週期收尾檢查清單 (End-of-Cycle Checklist)
+
+在每個主要的開發週期結束或重要功能交付/修正後，應執行以下檢查：
+
+1.  **更新開發日誌 (`DEVELOPER_LOG.md`)**:
+    *   詳細記錄該週期的主要目標、實作過程、遇到的問題、解決方案及最終達成的狀態。
+2.  **更新專案說明 (`README.md`)**:
+    *   如果變更影響了專案的核心功能、架構、安裝啟動方式或使用者可見的行為，應同步更新 `README.md` 的相關章節。
+    *   確保「目前進度與待辦事項」能反映最新的專案狀態。
+3.  **更新架構圖表 (若有變更)**:
+    *   **Mermaid 原始碼檔案**:
+        *   若新增/刪除主要類別，或類別間的重要關係發生改變，需更新類圖原始碼 (`class_diagram.mmd`)。
+        *   若核心流程（如狀態機的狀態轉換、重要模組間的交互順序）有顯著調整，需更新序列圖原始碼 (`sequence_diagram.mmd`)。
+    *   **生成對應的 SVG 圖片檔案**:
+        *   在更新 `.mmd` 檔案後，應使用 Mermaid CLI (`mmdc`) 命令生成最新的 SVG 圖片檔案。確保您的環境中 `mmdc` 命令可用 (可通過 `npm install -g @mermaid-js/mermaid-cli` 安裝，並配置好 PATH 環境變數)。
+        *   建議執行以下命令來更新圖片：
+          ```bash
+          mmdc -i class_diagram.mmd -o class_diagram.svg
+          mmdc -i sequence_diagram.mmd -o sequence_diagram.svg
+          ```
+        *   確保生成的 SVG 圖片也一併提交到版本控制系統。
+4.  **程式碼審查與風格 (建議)**:
+    *   快速回顧修改的程式碼，確保遵循專案的程式碼風格和命名慣例。
+    *   為新增的複雜邏輯或公開介面添加必要的註解。
+5.  **版本控制 (`Git`)**:
+    *   確保所有相關變更已加入 (`git add`)。
+    *   撰寫清晰且符合 Conventional Commits 格式的 commit message。
+    *   將變更提交 (`git commit`) 到本地倉庫。
+    *   (若適用) 將本地分支推送到遠端倉庫 (`git push`)。
