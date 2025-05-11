@@ -41,6 +41,7 @@ sequenceDiagram
         DataHandlerModule-->>DataFetchState: (downloaded_reports, api_suffix)
         DataFetchState->>DataHandlerModule: fetch_stock_financials_from_downloaded(code, suffix, reports)
         DataHandlerModule-->>DataFetchState: financials_for_stock
+        Note right of DataFetchState: 資產負債表數據獲取暫時跳過 (因API數據粒度不足)
     end
     DataFetchState-->>JoJoStateMachine: next_state = VALUATION
     

@@ -3,17 +3,48 @@ import json
 import os
 from dotenv import load_dotenv
 import requests 
+import pandas as pd # 新增 Pandas 導入
 import data_handler # 確保 data_handler 模組被正確引用
 from data_handler import (
-    get_all_companies_basic_data,
-    filter_industry_stocks,
-    get_financial_reports_for_stock,
-    fetch_stock_financials_from_downloaded,
-    get_balance_sheet_data_for_stock, # 新增導入
-    fetch_balance_sheet_items_from_downloaded, # 新增導入
+    get_all_companies_basic_data, # TWSE
+    filter_industry_stocks,       # TWSE
+    # get_financial_reports_for_stock, # TWSE - 替換為 FinMind
+    # fetch_stock_financials_from_downloaded, # TWSE - 替換為 FinMind
+    # get_balance_sheet_data_for_stock, # TWSE - 替換為 FinMind
+    # fetch_balance_sheet_items_from_downloaded, # TWSE - 替換為 FinMind
+    fetch_finmind_financial_statement_data, # FinMind - 新增
+    extract_finmind_items,                 # FinMind - 新增
     _fetch_stock_financials_simulated, 
     calculate_dcf_valuation
 )
+
+# FinMind 目標會計科目映射 (根據 test_finmind_api.py 輸出確認)
+FINMIND_BALANCE_SHEET_MAP_T0 = {
+    'ar_t0': 'AccountsReceivableNet',  # 應收帳款淨額
+    'inv_t0': 'Inventories',           # 存貨
+    'ap_t0': 'AccountsPayable'         # 應付帳款
+}
+FINMIND_BALANCE_SHEET_MAP_T1 = { # 用於獲取前一期數據
+    'ar_t1': 'AccountsReceivableNet',
+    'inv_t1': 'Inventories',
+    'ap_t1': 'AccountsPayable'
+}
+FINMIND_CASH_FLOW_MAP = {
+    # 資本支出：'PropertyAndPlantAndEquipment' (取得不動產、廠房及設備) - FinMind中此值通常為負(現金流出)
+    # 在FCFE公式中 Capex 通常是正的支出值，所以使用時可能需要取相反數。
+    'capex': 'PropertyAndPlantAndEquipment', 
+    'depreciation': 'Depreciation',          # 折舊費用
+    'amortization': 'AmortizationExpense'    # 攤銷費用
+    # 淨舉債 (NetBorrowing) 初期先忽略，設為0
+}
+FINMIND_INCOME_STATEMENT_MAP = {
+    # 歸母淨利: 'EquityAttributableToOwnersOfParent' (淨利（淨損）歸屬於母公司業主)
+    # 另一個可能是 'IncomeFromContinuingOperations' (繼續營業單位本期淨利（淨損）)
+    # 我們先用 EquityAttributableToOwnersOfParent，因為它更明確是"歸母"
+    'net_income_parent': 'EquityAttributableToOwnersOfParent', 
+    'revenue': 'Revenue',                    # 營業收入
+    'eps_finmind': 'EPS'                     # 基本每股盈餘（元）
+}
 
 class JoJoState(Enum):
     CONFIG_LOAD = auto()
@@ -192,49 +223,84 @@ class DataFetchState(BaseState):
 
             for stock_detail in industry_stocks_details: 
                 stock_code = stock_detail['code']
-                print(f"  準備為 {stock_code} ({stock_detail['name']}) 提取財報與股價...")
-                
-                downloaded_reports, used_api_suffix = get_financial_reports_for_stock(stock_detail, context)
-                
-                if used_api_suffix not in processed_api_suffixes and downloaded_reports:
-                    processed_api_suffixes.add(used_api_suffix)
-                
-                financials = fetch_stock_financials_from_downloaded(stock_code, used_api_suffix, downloaded_reports)
-                financials["shares_outstanding"] = stock_detail.get("shares_outstanding", 0.0)
-                financials["stock_code"] = stock_code 
-                financials["stock_name"] = stock_detail.get("name", "N/A") 
-                
-                # # 暫時註釋掉獲取資產負債表項目的部分，因為目前API數據粒度不足
-                # downloaded_bs_reports, bs_api_suffix = get_balance_sheet_data_for_stock(stock_detail, context)
-                # balance_sheet_items_two_periods = fetch_balance_sheet_items_from_downloaded(stock_code, bs_api_suffix, downloaded_bs_reports)
-                
-                # if balance_sheet_items_two_periods and not balance_sheet_items_two_periods.get("error"):
-                #     # 更新 financials 字典以包含兩期數據
-                #     financials["accounts_receivable_t0"] = balance_sheet_items_two_periods.get("accounts_receivable_t0")
-                #     financials["inventories_t0"] = balance_sheet_items_two_periods.get("inventories_t0")
-                #     financials["accounts_payable_t0"] = balance_sheet_items_two_periods.get("accounts_payable_t0")
-                #     financials["bs_year_t0"] = balance_sheet_items_two_periods.get("bs_year_t0")
-                #     financials["bs_quarter_t0"] = balance_sheet_items_two_periods.get("bs_quarter_t0")
+                print(f"  準備為 {stock_code} ({stock_detail['name']}) 從 FinMind 提取財報數據...")
+                financials = {
+                    "stock_code": stock_code,
+                    "stock_name": stock_detail.get("name", "N/A"),
+                    "shares_outstanding": stock_detail.get("shares_outstanding", 0.0),
+                    "error": None 
+                }
 
-                #     financials["accounts_receivable_t1"] = balance_sheet_items_two_periods.get("accounts_receivable_t1")
-                #     financials["inventories_t1"] = balance_sheet_items_two_periods.get("inventories_t1")
-                #     financials["accounts_payable_t1"] = balance_sheet_items_two_periods.get("accounts_payable_t1")
-                #     financials["bs_year_t1"] = balance_sheet_items_two_periods.get("bs_year_t1")
-                #     financials["bs_quarter_t1"] = balance_sheet_items_two_periods.get("bs_quarter_t1")
-                    
-                #     print(f"    (DataFetchState) 股票 {stock_code} T0 資產負債表項目: AR={financials.get('accounts_receivable_t0')}, INV={financials.get('inventories_t0')}, AP={financials.get('accounts_payable_t0')}")
-                #     if financials.get("bs_year_t1"): # 只有當 T-1 期數據存在時才打印
-                #         print(f"    (DataFetchState) 股票 {stock_code} T-1 資產負債表項目: AR={financials.get('accounts_receivable_t1')}, INV={financials.get('inventories_t1')}, AP={financials.get('accounts_payable_t1')}")
-                # else:
-                #     print(f"    (DataFetchState) 警告：股票 {stock_code} 未能獲取有效的資產負債表項目。錯誤: {balance_sheet_items_two_periods.get('error') if balance_sheet_items_two_periods else '未知資產負債表錯誤'}")
-                #     # 確保即使出錯，這些鍵也存在於 financials 中，值為 None
-                #     for period in ["t0", "t1"]:
-                #         financials[f"accounts_receivable_{period}"] = None
-                #         financials[f"inventories_{period}"] = None
-                #         financials[f"accounts_payable_{period}"] = None
-                #         financials[f"bs_year_{period}"] = None
-                #         financials[f"bs_quarter_{period}"] = None
-                print(f"    (DataFetchState) 暫不處理資產負債表數據，因API數據粒度不足。")
+                # 獲取財報的起始日期，例如過去三年
+                # FinMind 的 date 參數通常指財報發布日或期末日，它會返回該日期點可得的最新數據
+                # 我們需要至少兩期資產負債表來計算變動。
+                # 假設我們需要 2023-Q4 和 2023-Q3 (或 2022-Q4)
+                # FinMind 的 start_date 參數會獲取該日期之後的所有數據，我們再從中挑選
+                report_start_date = context.get("finmind_report_start_date", "2022-01-01") # 可在UI設定
+
+                # 1. 獲取資產負債表 (BalanceSheet)
+                bs_df = fetch_finmind_financial_statement_data(stock_code, report_start_date, 'BalanceSheet')
+                if not bs_df.empty:
+                    # 提取最新一期 (T0)
+                    bs_items_t0 = extract_finmind_items(bs_df, FINMIND_BALANCE_SHEET_MAP_T0) # 預設取最新
+                    financials.update(bs_items_t0)
+                    financials['bs_report_date_t0'] = bs_items_t0.get('report_date')
+
+                    # 嘗試提取前一期 (T-1)
+                    # 這需要找到 T0 日期之前的一個唯一報表日期
+                    if bs_items_t0.get('report_date'):
+                        t0_date = pd.to_datetime(bs_items_t0['report_date'])
+                        # 獲取所有唯一日期並排序
+                        unique_dates_bs = sorted(bs_df['date'].unique(), reverse=True)
+                        t0_date_np = pd.Timestamp(t0_date).to_datetime64() # 轉換為 numpy.datetime64
+                        
+                        if t0_date_np in unique_dates_bs:
+                            t0_index = unique_dates_bs.index(t0_date_np)
+                            if t0_index + 1 < len(unique_dates_bs):
+                                t1_date_np = unique_dates_bs[t0_index + 1]
+                                t1_date_str = pd.Timestamp(t1_date_np).strftime('%Y-%m-%d')
+                                bs_items_t1 = extract_finmind_items(bs_df, FINMIND_BALANCE_SHEET_MAP_T1, report_date_str=t1_date_str)
+                                financials.update(bs_items_t1)
+                                financials['bs_report_date_t1'] = bs_items_t1.get('report_date')
+                                print(f"    (DataFetchState) 股票 {stock_code} 資產負債表 T0: {financials.get('bs_report_date_t0')}, T-1: {financials.get('bs_report_date_t1')}")
+                            else:
+                                print(f"    (DataFetchState) 警告：股票 {stock_code} 資產負債表只找到一期數據，無法獲取 T-1 期。")
+                        else:
+                             print(f"    (DataFetchState) 警告：股票 {stock_code} 最新資產負債表日期 {t0_date_np} 未在唯一日期列表中找到。")
+                else:
+                    financials["error"] = financials.get("error","") + "無法獲取資產負債表; "
+                    print(f"    (DataFetchState) 警告：股票 {stock_code} 未能獲取資產負債表數據。")
+
+                # 2. 獲取現金流量表 (CashFlowsStatement)
+                cf_df = fetch_finmind_financial_statement_data(stock_code, report_start_date, 'CashFlowsStatement')
+                if not cf_df.empty:
+                    cf_items = extract_finmind_items(cf_df, FINMIND_CASH_FLOW_MAP) # 預設取最新
+                    financials.update(cf_items)
+                    financials['cf_report_date'] = cf_items.get('report_date')
+                else:
+                    financials["error"] = financials.get("error","") + "無法獲取現金流量表; "
+                    print(f"    (DataFetchState) 警告：股票 {stock_code} 未能獲取現金流量表數據。")
+
+                # 3. 獲取綜合損益表 (FinancialStatements)
+                is_df = fetch_finmind_financial_statement_data(stock_code, report_start_date, 'FinancialStatements')
+                if not is_df.empty:
+                    is_items = extract_finmind_items(is_df, FINMIND_INCOME_STATEMENT_MAP) # 預設取最新
+                    financials.update(is_items)
+                    financials['is_report_date'] = is_items.get('report_date')
+                    # 使用 FinMind 的 EPS (通常是年化或季度，需確認 FinMind 如何提供)
+                    # TWSE API 的 EPS 是單季，若 FinMind 是年化，則需調整或統一
+                    # 暫時先用 FinMind 的 EPS，並在估值時注意其基礎
+                    financials['eps'] = financials.get('eps_finmind') # 覆蓋掉可能來自舊 TWSE API 的 eps
+                else:
+                    financials["error"] = financials.get("error","") + "無法獲取損益表; "
+                    print(f"    (DataFetchState) 警告：股票 {stock_code} 未能獲取綜合損益表數據。")
+                
+                # 移除 financials["error"] 開頭的 None
+                if financials.get("error") and financials["error"].startswith("None"):
+                    financials["error"] = financials["error"][4:].strip()
+                if financials.get("error") and financials["error"].strip() == "":
+                    financials["error"] = None
+
 
                 stock_price_info = next((price_data for price_data in all_stock_prices if price_data.get("Code") == stock_code), None)
                 if stock_price_info and stock_price_info.get("ClosingPrice"):
