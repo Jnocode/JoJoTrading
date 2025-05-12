@@ -2,26 +2,81 @@ import json
 import os
 import requests
 from dotenv import load_dotenv
-import pandas as pd # 新增
-from FinMind.data import DataLoader # 新增
+import pandas as pd
+from FinMind.data import DataLoader
+import time # For cache freshness
+from pathlib import Path # For creating cache directory
 
 load_dotenv()
 
-# FinMind API Token (可選，用於提高使用上限)
-# 匿名用戶(token="") 每小時限制 300 次，註冊驗證後(有token) 每小時限制 600 次
-FINMIND_API_TOKEN = os.getenv("FINMIND_API_TOKEN", "") # 從 .env 讀取或預設為空
-finmind_api = DataLoader()
-if FINMIND_API_TOKEN:
-    try:
-        finmind_api.login(token=FINMIND_API_TOKEN)
-        print("  (data_handler) FinMind API token login successful.")
-    except Exception as e:
-        print(f"  (data_handler) FinMind API token login failed: {e}. Using anonymous access.")
-else:
-    print("  (data_handler) No FinMind API token found. Using anonymous access (300 requests/hr limit).")
+# Get the directory of the current script
+SCRIPT_DIR = Path(__file__).resolve().parent
+CACHE_DIR = SCRIPT_DIR / "cache" / "finmind_data"
+CACHE_EXPIRY_SECONDS = 24 * 60 * 60 # 24 hours
+
+# FinMind API 憑證 (Token 或 UserID/Password)
+FINMIND_API_TOKEN = os.getenv("FINMIND_API_TOKEN", "")
+FINMIND_USER_ID = os.getenv("FINMIND_USER_ID", "")
+FINMIND_PASSWORD = os.getenv("FINMIND_PASSWORD", "")
+
+# Create cache directory if it doesn't exist
+try:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"  (data_handler) Cache directory ensured at: {CACHE_DIR}")
+except Exception as e_mkdir:
+    print(f"  (data_handler) ERROR: Could not create cache directory at {CACHE_DIR}: {e_mkdir}")
 
 
-# TWSE OpenAPI 相關設定 (目前可能部分不再主要使用，但保留)
+finmind_api = DataLoader() 
+login_method_used = "anonymous_default" 
+
+try:
+    if FINMIND_USER_ID and FINMIND_PASSWORD:
+        print("  (data_handler) Attempting FinMind login with User ID and Password...")
+        try:
+            finmind_api.login(user_id=FINMIND_USER_ID, password=FINMIND_PASSWORD)
+            print("  (data_handler) FinMind API login successful with User ID and Password.")
+            login_method_used = "user_pass"
+        except Exception as e_user_pass:
+            print(f"  (data_handler) FinMind API login with User ID and Password failed: {e_user_pass}.")
+            if FINMIND_API_TOKEN:
+                print("  (data_handler) Attempting FinMind login with API Token as fallback...")
+                try:
+                    finmind_api = DataLoader(token=FINMIND_API_TOKEN) 
+                    print("  (data_handler) FinMind DataLoader re-initialized with token (after user/pass fail).")
+                    login_method_used = "token_after_user_pass_fail"
+                except Exception as e_token_init_fallback:
+                    print(f"  (data_handler) FinMind DataLoader initialization with token (fallback) also failed: {e_token_init_fallback}. Using anonymous access.")
+                    finmind_api = DataLoader() 
+                    login_method_used = "anonymous_after_all_fails"
+            else:
+                print("  (data_handler) No API Token available as fallback. Using anonymous access.")
+                finmind_api = DataLoader() 
+                login_method_used = "anonymous_after_user_pass_fail_no_token"
+
+    elif FINMIND_API_TOKEN: 
+        print("  (data_handler) Attempting FinMind login with API Token (no User ID/Password provided)...")
+        try:
+            finmind_api = DataLoader(token=FINMIND_API_TOKEN)
+            print("  (data_handler) FinMind DataLoader initialized with token.")
+            login_method_used = "token_only"
+        except Exception as e_token_init_only:
+            print(f"  (data_handler) FinMind DataLoader initialization with token failed: {e_token_init_only}. Using anonymous access.")
+            finmind_api = DataLoader() 
+            login_method_used = "anonymous_after_token_fail"
+    else:
+        print("  (data_handler) No FinMind credentials (.env: TOKEN, USER_ID, PASSWORD) found. Using anonymous access (300 requests/hr limit).")
+        login_method_used = "anonymous_no_creds"
+
+except Exception as e_init_critical:
+    print(f"  (data_handler) Critical error during FinMind DataLoader initialization/login attempts: {e_init_critical}. Using anonymous access.")
+    finmind_api = DataLoader() 
+    login_method_used = "anonymous_critical_fail"
+
+print(f"  (data_handler) Final FinMind API access method: {login_method_used}")
+
+
+# TWSE OpenAPI 相關設定
 API_BASE_URL = "https://openapi.twse.com.tw/v1/opendata"
 INCOME_STATEMENT_API_PATH_PREFIX = "t187ap06_L"
 BALANCE_SHEET_API_PATH_PREFIX = "t187ap07_L" 
@@ -86,7 +141,6 @@ FINANCIAL_FIELD_NAMES_MAP = {
     API_SUFFIX_OTHER_INDUSTRY: {"eps": "基本每股盈餘（元）", "revenue": "收入", "net_income_parent": "淨利（淨損）歸屬於母公司業主"},
 }
 
-# 資產負債表欄位名稱映射 (初步假設，可能需要根據實際 API 調整)
 BALANCE_SHEET_FIELD_NAMES_MAP = {
     API_SUFFIX_GENERAL: {
         "accounts_receivable": "應收票據及帳款淨額", 
@@ -248,7 +302,7 @@ def get_balance_sheet_data_for_stock(stock_detail, context): # TWSE API (舊，�
         print(f"  (data_handler) [TWSE] 正在獲取 {report_name_for_log} ({api_url}) 並存入 context['{context_key}']...")
         try:
             print(f"    (data_handler) [TWSE] 警告：將嘗試禁用 SSL 憑證驗證 (verify=False) 來獲取 {report_name_for_log}。")
-            response = requests.get(api_url, timeout=30, verify=False) # 實際的 requests.get
+            response = requests.get(api_url, timeout=30, verify=False) 
             response.raise_for_status()
             context[context_key] = response.json()
             print(f"    (data_handler) [TWSE] 成功獲取 {len(context[context_key])} 筆 {report_name_for_log} 記錄。")
@@ -260,23 +314,36 @@ def get_balance_sheet_data_for_stock(stock_detail, context): # TWSE API (舊，�
             context[context_key] = []
     return context.get(context_key, []), api_suffix
 
-
 # --- FinMind Data Fetching Functions ---
 
 def fetch_finmind_financial_statement_data(stock_id: str, start_date: str, statement_type: str):
-    """
-    從 FinMind 獲取指定股票、起始日期、報表類型的財務報表數據。
-    statement_type 可以是 'BalanceSheet', 'CashFlowsStatement', 'FinancialStatements' (綜合損益表)
-    返回 Pandas DataFrame。
-    """
-    print(f"  (data_handler) Fetching FinMind {statement_type} for {stock_id} from {start_date}...")
+    cache_file_name = f"{stock_id}_{statement_type}_{start_date.replace('-', '')}.parquet"
+    cache_file_path = CACHE_DIR / cache_file_name
+
+    if cache_file_path.exists():
+        try:
+            file_mod_time = cache_file_path.stat().st_mtime
+            if (time.time() - file_mod_time) < CACHE_EXPIRY_SECONDS:
+                print(f"  (data_handler) CACHE HIT: Reading {statement_type} for {stock_id} from {cache_file_path}")
+                df = pd.read_parquet(str(cache_file_path)) 
+                if 'date' in df.columns: 
+                     df['date'] = pd.to_datetime(df['date'])
+                return df
+            else:
+                print(f"  (data_handler) CACHE STALE: {cache_file_path} expired. Fetching from API.")
+        except Exception as e_cache_read:
+            print(f"  (data_handler) CACHE READ ERROR for {cache_file_path}: {e_cache_read}. Fetching from API.")
+
+    print(f"  (data_handler) CACHE MISS/STALE: Fetching FinMind {statement_type} for {stock_id} from {start_date} via API...")
     df = None
     try:
+        # Add a small delay before each API call to respect rate limits
+        time.sleep(2.0) # Increased delay to approx 50 requests per minute
         if statement_type == 'BalanceSheet':
             df = finmind_api.taiwan_stock_balance_sheet(stock_id=stock_id, start_date=start_date)
         elif statement_type == 'CashFlowsStatement':
             df = finmind_api.taiwan_stock_cash_flows_statement(stock_id=stock_id, start_date=start_date)
-        elif statement_type == 'FinancialStatements': # 綜合損益表
+        elif statement_type == 'FinancialStatements': 
             df = finmind_api.taiwan_stock_financial_statement(stock_id=stock_id, start_date=start_date)
         else:
             print(f"    (data_handler) Unknown FinMind statement_type: {statement_type}")
@@ -287,72 +354,240 @@ def fetch_finmind_financial_statement_data(stock_id: str, start_date: str, state
             if 'date' in df.columns:
                 df['date'] = pd.to_datetime(df['date'])
                 df = df.sort_values(by='date', ascending=False)
+            try:
+                cache_file_path.parent.mkdir(parents=True, exist_ok=True) 
+                df.to_parquet(str(cache_file_path)) 
+                print(f"    (data_handler) CACHE SAVED: {statement_type} for {stock_id} to {cache_file_path}")
+            except Exception as e_cache_write:
+                print(f"    (data_handler) CACHE WRITE ERROR for {str(cache_file_path)}: {e_cache_write}")
             return df
         elif df is not None and df.empty:
-            print(f"    (data_handler) Fetched FinMind {statement_type} for {stock_id}, but it's an empty DataFrame.")
+            print(f"    (data_handler) Fetched FinMind {statement_type} for {stock_id}, but it's an empty DataFrame. Not caching.")
             return pd.DataFrame()
         else:
             print(f"    (data_handler) Failed to fetch FinMind {statement_type} for {stock_id} (returned None).")
             return pd.DataFrame()
-            
     except Exception as e:
         print(f"    (data_handler) Error fetching FinMind {statement_type} for {stock_id}: {e}")
         return pd.DataFrame()
 
-def extract_finmind_items(df: pd.DataFrame, target_items_map: dict, report_date_str: str = None):
-    """
-    從 FinMind 返回的 DataFrame (特定日期) 中提取目標會計科目的值。
-    target_items_map: {'our_key_name': 'finmind_type_value', ...}
-    report_date_str: 'YYYY-MM-DD', 如果為 None，則取 DataFrame 中最新的日期。
-    """
+def extract_finmind_items(df: pd.DataFrame, target_items_map: dict, report_date_str: str = None, max_lookback_periods: int = 1):
     extracted_values = {key: None for key in target_items_map.keys()}
+    for key in target_items_map.keys(): # Initialize all potential keys
+        extracted_values[f"{key}_actual_date"] = None
+        extracted_values[f"{key}_source_field"] = None
+
     if df.empty:
-        extracted_values['report_date'] = None 
+        extracted_values['report_date'] = report_date_str # If a date was passed, use it, else None
         return extracted_values
 
-    target_date = None
+    all_available_dates_in_df = sorted(pd.to_datetime(df['date'].unique()), reverse=True)
+    if not all_available_dates_in_df:
+        print(f"    (data_handler) No valid dates found in the provided DataFrame for extraction.")
+        extracted_values['report_date'] = report_date_str # If a date was passed, use it, else None
+        return extracted_values
+
+    target_date_dt = None
+    processed_report_date_str = None # This will be the date string corresponding to target_date_dt
+
     if report_date_str:
         try:
-            target_date = pd.to_datetime(report_date_str)
+            target_date_dt = pd.to_datetime(report_date_str)
+            processed_report_date_str = report_date_str
         except ValueError:
-            print(f"    (data_handler) Invalid report_date_str: {report_date_str}")
-            extracted_values['report_date'] = None
-            return extracted_values
-        df_period = df[df['date'] == target_date].copy()
-    else: 
-        if df['date'].empty:
-            print(f"    (data_handler) DataFrame has no 'date' column or is empty, cannot determine latest date.")
-            extracted_values['report_date'] = None
-            return extracted_values
-        latest_date = df['date'].max()
-        if pd.isna(latest_date):
-             print(f"    (data_handler) Could not determine latest date from FinMind DataFrame (all dates are NaT).")
-             extracted_values['report_date'] = None
-             return extracted_values
-        df_period = df[df['date'] == latest_date].copy()
-        report_date_str = latest_date.strftime('%Y-%m-%d')
+            print(f"    (data_handler) Invalid report_date_str: {report_date_str}. Will use latest available date from DataFrame if possible.")
+            # Fall through to use latest from df if report_date_str is invalid
+            target_date_dt = all_available_dates_in_df[0]
+            processed_report_date_str = target_date_dt.strftime('%Y-%m-%d')
+    else: # No specific date passed, use the latest from the dataframe
+        target_date_dt = all_available_dates_in_df[0]
+        processed_report_date_str = target_date_dt.strftime('%Y-%m-%d')
+    
+    extracted_values['report_date'] = processed_report_date_str # Set the report date that will be processed/targeted
 
-    if df_period.empty:
-        print(f"    (data_handler) No data found for date {report_date_str} in FinMind DataFrame.")
-        extracted_values['report_date'] = report_date_str if report_date_str else (latest_date.strftime('%Y-%m-%d') if 'latest_date' in locals() and pd.notna(latest_date) else None)
-        return extracted_values
-    
-    df_period.set_index('type', inplace=True)
-    
-    for key, finmind_type in target_items_map.items():
-        if finmind_type in df_period.index:
-            value = df_period.loc[finmind_type, 'value']
-            extracted_values[key] = float(value) if pd.notna(value) else None
+    try:
+        # Ensure target_date_dt is not None before proceeding
+        if target_date_dt is None: # Should not happen if logic above is correct
+            print(f"    (data_handler) CRITICAL: target_date_dt is None before processing items. This should not occur.")
+            return extracted_values
+
+        if target_date_dt.tzinfo is not None and all_available_dates_in_df[0].tzinfo is None:
+            target_date_dt = target_date_dt.tz_localize(None)
+        target_date_index = all_available_dates_in_df.index(target_date_dt)
+    except ValueError:
+        print(f"    (data_handler) Target date {report_date_str} not found in available dates. Will try to look back from nearest earlier date if possible.")
+        earlier_dates = [d for d in all_available_dates_in_df if d < target_date_dt]
+        if not earlier_dates:
+            print(f"    (data_handler) No dates available before {report_date_str} to start lookback.")
+            return extracted_values
+        target_date_index = all_available_dates_in_df.index(earlier_dates[0])
+
+    for key, finmind_type_or_list in target_items_map.items():
+        found_value_for_key = None
+        actual_date_for_key = None
+        used_finmind_type_for_key = None
+        
+        finmind_types_to_try_with_conditions = []
+        if key == 'net_income_parent':
+            finmind_types_to_try_with_conditions = [
+                ('EquityAttributableToOwnersOfParent', lambda origin_name: "綜合損益" not in str(origin_name) and ("淨利" in str(origin_name) or "純益" in str(origin_name))),
+                ('ProfitLoss', None), 
+                ('IncomeFromContinuingOperations', None), 
+                ('IncomeAfterTax', None) 
+            ]
+        elif isinstance(finmind_type_or_list, list):
+            finmind_types_to_try_with_conditions = [(ft, None) for ft in finmind_type_or_list]
+        else: 
+            finmind_types_to_try_with_conditions = [(finmind_type_or_list, None)]
+        
+        logged_skip_for_primary_candidate_this_key_for_period = False
+
+        for lookback_attempt in range(max_lookback_periods + 1):
+            if found_value_for_key is not None: break 
+
+            current_date_index_to_try = target_date_index + lookback_attempt
+            if current_date_index_to_try < len(all_available_dates_in_df):
+                current_processing_date_dt = all_available_dates_in_df[current_date_index_to_try]
+                current_processing_date_str = current_processing_date_dt.strftime('%Y-%m-%d')
+                
+                df_current_period = df[df['date'] == current_processing_date_dt].copy()
+                
+                if not df_current_period.empty:
+                    temp_df_indexed = df_current_period.set_index('type', drop=False)
+                    
+                    # Reset skip log for new lookback period
+                    if lookback_attempt > 0: logged_skip_for_primary_candidate_this_key_for_period = False
+
+
+                    for finmind_type_candidate, condition_func in finmind_types_to_try_with_conditions:
+                        if found_value_for_key is not None: break # Already found for this key in this lookback period
+
+                        if finmind_type_candidate in temp_df_indexed.index:
+                            matched_rows = temp_df_indexed.loc[[finmind_type_candidate]]
+                            
+                            for _, row_data in matched_rows.iterrows(): 
+                                value = row_data['value']
+                                origin_name = row_data.get('origin_name', '') 
+
+                                if pd.notna(value):
+                                    passes_condition = True
+                                    if condition_func:
+                                        passes_condition = condition_func(origin_name)
+                                    
+                                    if passes_condition:
+                                        found_value_for_key = float(value)
+                                        actual_date_for_key = current_processing_date_str
+                                        used_finmind_type_for_key = finmind_type_candidate
+                                        
+                                        is_primary_attempt_for_net_income = (key == 'net_income_parent' and finmind_type_candidate == finmind_types_to_try_with_conditions[0][0])
+                                        if lookback_attempt > 0 or (key == 'net_income_parent' and not is_primary_attempt_for_net_income) :
+                                             print(f"    (data_handler) Item '{key}' (target date: {report_date_str}): Found using FinMind type '{used_finmind_type_for_key}' (Origin: '{origin_name}') from date {actual_date_for_key}, Value: {found_value_for_key}.")
+                                        break 
+                                    elif key == 'net_income_parent' and finmind_type_candidate == 'EquityAttributableToOwnersOfParent' and not logged_skip_for_primary_candidate_this_key_for_period:
+                                        print(f"    (data_handler) Item '{key}' (target date: {report_date_str}): Skipped '{finmind_type_candidate}' (Origin: '{origin_name}') for date {current_processing_date_str} due to condition fail.")
+                                        logged_skip_for_primary_candidate_this_key_for_period = True 
+                            if found_value_for_key is not None: break 
+            if found_value_for_key is not None: break 
+        
+        if found_value_for_key is not None:
+            extracted_values[key] = found_value_for_key
+            extracted_values[f"{key}_actual_date"] = actual_date_for_key
+            extracted_values[f"{key}_source_field"] = used_finmind_type_for_key
         else:
-            print(f"    (data_handler) FinMind type '{finmind_type}' for key '{key}' not found in report for {report_date_str}.")
-            
-    extracted_values['report_date'] = report_date_str
+            print(f"    (data_handler) Item '{key}' (tried: {[ft[0] for ft in finmind_types_to_try_with_conditions]}) not found for target date {report_date_str} even after {max_lookback_periods} lookback period(s).")
+
     return extracted_values
+
+def fetch_finmind_stock_price(stock_id: str, target_date_str: str = None):
+    """
+    Fetches the latest stock price for a given stock_id up to the target_date.
+    If target_date_str is None, fetches the most recent price.
+    Uses caching.
+    """
+    # Determine date range for fetching; we want the price on or before target_date_str
+    # If target_date_str is None, we fetch for a recent period to get the latest.
+    if target_date_str:
+        end_date_dt = pd.to_datetime(target_date_str)
+        start_date_dt = end_date_dt - pd.Timedelta(days=14) # Look back 14 days
+    else:
+        end_date_dt = pd.Timestamp.today()
+        start_date_dt = end_date_dt - pd.Timedelta(days=14)
+
+    start_date_api_str = start_date_dt.strftime('%Y-%m-%d')
+    end_date_api_str = end_date_dt.strftime('%Y-%m-%d') # FinMind end_date is inclusive
+
+    cache_file_name = f"{stock_id}_daily_price_{end_date_api_str.replace('-', '')}.parquet"
+    cache_file_path = CACHE_DIR.parent / "finmind_price_cache" / cache_file_name # Separate cache for prices
+    
+    try:
+        cache_file_path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e_mkdir_price:
+        print(f"  (data_handler) ERROR: Could not create price cache directory at {cache_file_path.parent}: {e_mkdir_price}")
+
+
+    if cache_file_path.exists():
+        try:
+            file_mod_time = cache_file_path.stat().st_mtime
+            # Price data changes daily, so a shorter expiry, e.g., 12 hours or check if date is today
+            is_today = end_date_dt.date() == pd.Timestamp.today().date()
+            cache_duration = 12 * 3600 if is_today else 24 * 3600 # 12 hours if today, else 24 hours
+            if (time.time() - file_mod_time) < cache_duration:
+                print(f"  (data_handler) PRICE CACHE HIT: Reading daily prices for {stock_id} from {cache_file_path}")
+                df_price = pd.read_parquet(str(cache_file_path))
+                if not df_price.empty and 'date' in df_price.columns:
+                    df_price['date'] = pd.to_datetime(df_price['date'])
+                    # Filter for the target_date_str or latest if None
+                    if target_date_str:
+                        df_price_filtered = df_price[df_price['date'] <= pd.to_datetime(target_date_str)].sort_values(by='date', ascending=False)
+                    else:
+                        df_price_filtered = df_price.sort_values(by='date', ascending=False)
+                    
+                    if not df_price_filtered.empty:
+                        return df_price_filtered.iloc[0]['close'] # Return the closing price of the most recent day found
+                return None # Cache hit but no valid data
+            else:
+                print(f"  (data_handler) PRICE CACHE STALE: {cache_file_path} expired. Fetching from API.")
+        except Exception as e_cache_read_price:
+            print(f"  (data_handler) PRICE CACHE READ ERROR for {cache_file_path}: {e_cache_read_price}. Fetching from API.")
+
+    print(f"  (data_handler) PRICE CACHE MISS/STALE: Fetching FinMind daily price for {stock_id} from {start_date_api_str} to {end_date_api_str} via API...")
+    try:
+        time.sleep(2.0) # Increased delay before API call
+        df_price = finmind_api.taiwan_stock_daily(stock_id=stock_id, start_date=start_date_api_str, end_date=end_date_api_str)
+        if df_price is not None and not df_price.empty:
+            print(f"    (data_handler) Successfully fetched FinMind daily price for {stock_id}. Shape: {df_price.shape}")
+            if 'date' in df_price.columns:
+                df_price['date'] = pd.to_datetime(df_price['date'])
+                df_price = df_price.sort_values(by='date', ascending=False)
+                try:
+                    df_price.to_parquet(str(cache_file_path))
+                    print(f"    (data_handler) PRICE CACHE SAVED: Daily price for {stock_id} to {cache_file_path}")
+                except Exception as e_cache_write_price:
+                    print(f"    (data_handler) PRICE CACHE WRITE ERROR for {str(cache_file_path)}: {e_cache_write_price}")
+
+                # Filter again after fetching for the target_date_str or latest if None
+                if target_date_str:
+                    df_price_filtered = df_price[df_price['date'] <= pd.to_datetime(target_date_str)].sort_values(by='date', ascending=False)
+                else:
+                    df_price_filtered = df_price # Already sorted
+                
+                if not df_price_filtered.empty:
+                    return df_price_filtered.iloc[0]['close']
+            return None # No date column or data after sort
+        elif df_price is not None and df_price.empty:
+            print(f"    (data_handler) Fetched FinMind daily price for {stock_id}, but it's an empty DataFrame. Not caching.")
+            return None
+        else:
+            print(f"    (data_handler) Failed to fetch FinMind daily price for {stock_id} (returned None).")
+            return None
+    except Exception as e:
+        print(f"    (data_handler) Error fetching FinMind daily price for {stock_id}: {e}")
+        return None
 
 # --- End FinMind Data Fetching Functions ---
 
 
-def fetch_stock_financials_from_downloaded(stock_code, api_suffix_for_report, downloaded_financial_reports): # 保留此函式以兼容舊的 TWSE API 邏輯 (如果需要)
+def fetch_stock_financials_from_downloaded(stock_code, api_suffix_for_report, downloaded_financial_reports): 
     print(f"  (data_handler) [TWSE API] 正在為股票代號 '{stock_code}' (API後綴: {api_suffix_for_report}) 從已下載財報中提取數據...")
     latest_statement = None
     latest_year = "000"
@@ -399,7 +634,7 @@ def fetch_stock_financials_from_downloaded(stock_code, api_suffix_for_report, do
         net_income_to_parent = None
         try:
             if net_income_to_parent_val_str is not None and str(net_income_to_parent_val_str).strip() != "":
-                net_income_to_parent = float(net_income_to_parent_val_str) * 1000 # 轉換為元
+                net_income_to_parent = float(net_income_to_parent_val_str) * 1000 
         except ValueError:
             print(f"    (data_handler) [TWSE API] 警告：股票 '{stock_code}' 的淨利歸母 '{net_income_to_parent_val_str}' (欄位: {net_income_parent_field}) 無法轉換為浮點數。")
         
@@ -429,19 +664,21 @@ def _fetch_stock_financials_simulated(stock_detail):
 
 def calculate_dcf_valuation(stock_code, financials, risk_preference, context):
     print(f"  (data_handler) 開始為股票 {stock_code} 進行 DCF 估值 (使用 FinMind 數據基礎)...")
+    # print(f"    (data_handler) [DEBUG] Financials for {stock_code} in DCF: {financials}") # DEBUG Line
 
     if financials.get("error"):
         error_message = financials['error']
-        if error_message and all(e.strip().startswith("無法獲取") for e in error_message.split(';') if e.strip()):
+        if isinstance(error_message, str) and any(msg.strip().startswith("無法獲取") for msg in error_message.split(';') if msg.strip()): 
              print(f"    (data_handler) 股票 {stock_code} 因 FinMind 資料獲取不完整 ({error_message.strip()})，無法進行精確 FCFE 估值。")
              return {"stock_code": stock_code, "error": f"FinMind 資料不完整: {error_message.strip()}", 
                      "source_eps": financials.get("eps_finmind"), "current_market_price": financials.get("current_market_price")}
-        elif error_message: 
+        elif isinstance(error_message, str) and error_message.strip(): 
             print(f"    (data_handler) 股票 {stock_code} 缺少財務數據，無法估值: {error_message}")
             return {"stock_code": stock_code, "error": f"Missing financial data: {error_message}",
                      "source_eps": financials.get("eps_finmind"), "current_market_price": financials.get("current_market_price")}
 
     net_income_to_parent = financials.get("net_income_parent") 
+    net_income_source_field = financials.get('net_income_parent_source_field', '未知') 
     shares_outstanding = financials.get("shares_outstanding") 
     current_eps_for_reference = financials.get("eps_finmind") 
     current_market_price = financials.get("current_market_price")
@@ -452,13 +689,13 @@ def calculate_dcf_valuation(stock_code, financials, risk_preference, context):
     }
     missing_core_fields = [k for k, v in required_fields_for_fcfe.items() if v is None]
     if missing_core_fields:
-        error_msg = f"缺少核心數據: {', '.join(missing_core_fields)}，無法進行估值。"
+        error_msg = f"缺少核心數據: {', '.join(missing_core_fields)} (淨利嘗試來源欄位: {net_income_source_field})，無法進行估值。"
         print(f"    (data_handler) 股票 {stock_code}: {error_msg}")
-        return {"stock_code": stock_code, "error": error_msg, "source_eps": current_eps_for_reference, "current_market_price": current_market_price}
+        return {"stock_code": stock_code, "error": error_msg, "source_eps": current_eps_for_reference, "current_market_price": current_market_price, "net_income_source_field": net_income_source_field}
 
     if not isinstance(shares_outstanding, (int, float)) or shares_outstanding == 0:
         print(f"    (data_handler) 股票 {stock_code} 的流通股數無效或為0 ({shares_outstanding})，無法計算每股價值。")
-        return {"stock_code": stock_code, "error": "流通股數無效或為0", "source_eps": current_eps_for_reference, "current_market_price": current_market_price}
+        return {"stock_code": stock_code, "error": "流通股數無效或為0", "source_eps": current_eps_for_reference, "current_market_price": current_market_price, "net_income_source_field": net_income_source_field}
 
     capex_raw = financials.get('capex') 
     capex = -capex_raw if capex_raw is not None and capex_raw < 0 else (capex_raw if capex_raw is not None else 0.0)
@@ -494,17 +731,16 @@ def calculate_dcf_valuation(stock_code, financials, risk_preference, context):
         print(f"    (data_handler) 警告：股票 {stock_code} 因缺少 {', '.join(missing_wc_periods)} 期的完整營運資本數據，無法計算精確ΔWC。將假設ΔWC為0。")
 
     net_borrowing = 0.0 
-
     net_capex = capex - depreciation_amortization
     
     if not isinstance(net_income_to_parent, (int, float)):
-        print(f"    (data_handler) 警告：股票 {stock_code} 的淨利 (net_income_to_parent) 不是有效數字 ({net_income_to_parent})。無法計算 FCFE。")
-        return {"stock_code": stock_code, "error": "淨利數據無效", "source_eps": current_eps_for_reference, "current_market_price": current_market_price}
+        print(f"    (data_handler) 警告：股票 {stock_code} 的淨利 (net_income_to_parent from {net_income_source_field}) 不是有效數字 ({net_income_to_parent})。無法計算 FCFE。")
+        return {"stock_code": stock_code, "error": "淨利數據無效", "source_eps": current_eps_for_reference, "current_market_price": current_market_price, "net_income_source_field": net_income_source_field}
 
     fcfe = net_income_to_parent - net_capex - delta_wc + net_borrowing
     fcf_eps = fcfe / shares_outstanding
     
-    print(f"    (data_handler) 股票 {stock_code}: NI={net_income_to_parent:.0f}, Capex={capex:.0f}, D&A={depreciation_amortization:.0f}, NetCapex={net_capex:.0f}, ΔWC={delta_wc:.0f}, NetBorrowing={net_borrowing:.0f}")
+    print(f"    (data_handler) 股票 {stock_code}: NI(from {net_income_source_field})={net_income_to_parent:.0f}, Capex={capex:.0f}, D&A={depreciation_amortization:.0f}, NetCapex={net_capex:.0f}, ΔWC={delta_wc:.0f}, NetBorrowing={net_borrowing:.0f}")
     print(f"    (data_handler) 股票 {stock_code}: Calculated FCFE={fcfe:.0f}, FCF_EPS={fcf_eps:.4f}")
     
     short_term_growth_rate = context.get('dcf_short_term_growth_rate', 0.07) 
@@ -574,11 +810,11 @@ def calculate_dcf_valuation(stock_code, financials, risk_preference, context):
         "calculated_fcf_eps": round(fcf_eps, 2), 
         "used_discount_rate": discount_rate,
         "used_short_term_growth": short_term_growth_rate,
-        "used_terminal_growth": terminal_growth_rate
+        "used_terminal_growth": terminal_growth_rate,
+        "net_income_source_field": net_income_source_field
     }
 
-# 新增：從已下載的資產負債表中提取關鍵欄位 (嘗試獲取最新兩期)
-def fetch_balance_sheet_items_from_downloaded(stock_code, api_suffix_for_bs_report, downloaded_balance_sheets): # TWSE API (舊，備用)
+def fetch_balance_sheet_items_from_downloaded(stock_code, api_suffix_for_bs_report, downloaded_balance_sheets): 
     print(f"  (data_handler) [TWSE API] 正在為股票代號 '{stock_code}' (API後綴: {api_suffix_for_bs_report}) 從已下載資產負債表中提取最新兩期數據...")
     
     statements_for_stock = []
@@ -600,7 +836,6 @@ def fetch_balance_sheet_items_from_downloaded(stock_code, api_suffix_for_bs_repo
         ar_field = field_map_bs.get("accounts_receivable", "應收票據及帳款淨額")
         inv_field = field_map_bs.get("inventories", "存貨")
         ap_field = field_map_bs.get("accounts_payable", "應付票據及帳款")
-        # ... (此函式剩餘部分與 FinMind 版本中的類似輔助函式相同) ...
         accounts_receivable_str = statement.get(ar_field)
         inventories_str = statement.get(inv_field)
         accounts_payable_str = statement.get(ap_field)

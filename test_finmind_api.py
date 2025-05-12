@@ -1,87 +1,199 @@
+import os
 import pandas as pd
+from dotenv import load_dotenv
 from FinMind.data import DataLoader
 
-# FinMind API token (如果需要，請替換成您的 token)
-# 根據文件，未驗證信箱 token 為 ""，驗證後可至官網個人頁面複製 token
-# 匿名用戶(token="") 每小時限制 300 次，註冊驗證後(有token) 每小時限制 600 次
-FINMIND_API_TOKEN = "" 
+# Load environment variables from .env file
+load_dotenv()
 
-# 股票代號和日期 (範例)
-STOCK_ID = "2330" # 台積電
-START_DATE = "2022-01-01" # 可以嘗試獲取一個較近的年份開始的數據
-# 如果只想獲取最新一期，FinMind 的 date 參數可能可以直接用 YYYY-MM-DD，它會找該日期前的最新財報
-# 或者，如果 FinMind 的 API 設計是按期別（如 YYYYQ1）獲取，則需要查閱其具體用法
-# 暫時先用一個起始日期，看它返回什麼
+# Initialize FinMind DataLoader
+FINMIND_USER_ID = os.getenv("FINMIND_USER_ID", "")
+FINMIND_PASSWORD = os.getenv("FINMIND_PASSWORD", "")
+FINMIND_API_TOKEN = os.getenv("FINMIND_API_TOKEN", "")
 
 api = DataLoader()
-if FINMIND_API_TOKEN:
-    api.login(token=FINMIND_API_TOKEN) # 如果有 token，則登入
+login_successful = False
 
-def fetch_and_print_statement(dataset_name, stock_id, start_date):
-    print(f"\n--- Fetching {dataset_name} for {stock_id} from {start_date} ---")
+if FINMIND_USER_ID and FINMIND_PASSWORD:
     try:
-        # 嘗試獲取從 start_date 到最新的數據
-        # FinMind 的 Load.FinData() 似乎已棄用，新版建議用 DataLoader().taiwan_stock_financial_statement() 等
-        # 但我們先基於之前看到的 Load.FinData 範例來嘗試，如果不行再調整
-        # 或者直接使用更底層的 api.get_data 功能
-        
-        # 根據 FinMind GitHub 上的說明，獲取財務報表更推薦的方式是使用 DataLoader 的特定方法
-        # 例如：api.taiwan_stock_financial_statement(stock_id=stock_id, start_date=start_date, statement_type='BalanceSheet')
-        # 但 dataset 名稱仍然是關鍵。
-        # 我們先用通用的 data 方法，並嘗試推測的 dataset 名稱
-
-        # 查閱 FinMind 文件，dataset 名稱似乎是:
-        # 'TaiwanStockBalanceSheet', 'TaiwanStockCashFlowsStatement', 'TaiwanStockFinancialStatements' (綜合損益)
-        # 或者有時文件會用 'BalanceSheet', 'CashFlowStatement', 'FinancialStatements' (不帶 TaiwanStock 前綴)
-        
-        # 為了更準確，我們應該使用 FinMind 提供的特定函式（如果存在）
-        # 根據 FinMind/data/finmind_api.py 原始碼，有 taiwan_stock_balance_sheet, taiwan_stock_cash_flows_statement, taiwan_stock_financial_statement
-        
-        df = None
-        if dataset_name == 'TaiwanStockBalanceSheet':
-            df = api.taiwan_stock_balance_sheet(stock_id=stock_id, start_date=start_date)
-        elif dataset_name == 'TaiwanStockCashFlowsStatement':
-            df = api.taiwan_stock_cash_flows_statement(stock_id=stock_id, start_date=start_date)
-        elif dataset_name == 'TaiwanStockFinancialStatement': # 這是綜合損益表
-            df = api.taiwan_stock_financial_statement(stock_id=stock_id, start_date=start_date)
-        else:
-            print(f"Dataset name '{dataset_name}' not specifically handled by a direct function.")
-            # 後備：嘗試通用 data 方法 (如果上述特定函式不存在或想用通用方法)
-            # df = api.get_data(dataset=dataset_name, data_id=stock_id, start_date=start_date)
-
-
-        if df is not None and not df.empty:
-            print(f"Successfully fetched {dataset_name}.")
-            print("Columns:", df.columns.tolist())
-            print("Head:\n", df.head().to_string()) # 使用 to_string() 避免截斷
-            
-            print("\nUnique 'type' and 'origin_name' combinations:")
-            if 'type' in df.columns and 'origin_name' in df.columns:
-                unique_types = df[['type', 'origin_name']].drop_duplicates().sort_values(by='type')
-                for index, row in unique_types.iterrows():
-                    print(f"  type: {row['type']:<60} origin_name: {row['origin_name']}")
-            else:
-                print("  'type' or 'origin_name' column not found in DataFrame.")
-
-        elif df is not None and df.empty:
-            print(f"Fetched {dataset_name}, but it's an empty DataFrame.")
-        else:
-            print(f"Failed to fetch {dataset_name} or no specific function was called.")
-            
+        api.login(user_id=FINMIND_USER_ID, password=FINMIND_PASSWORD)
+        print(f"Logged in to FinMind with User ID: {FINMIND_USER_ID}")
+        login_successful = True
     except Exception as e:
-        print(f"Error fetching {dataset_name}: {e}")
+        print(f"Failed to login with User ID/Password: {e}")
+        if FINMIND_API_TOKEN:
+            print("Attempting login with API Token...")
+            try:
+                api = DataLoader(token=FINMIND_API_TOKEN)
+                # Test with a simple call if token login doesn't confirm itself
+                api.taiwan_stock_info() 
+                print("Logged in to FinMind with API Token.")
+                login_successful = True
+            except Exception as e_token:
+                print(f"Failed to login with API Token: {e_token}")
+                print("Proceeding with anonymous access.")
+        else:
+            print("No API Token found. Proceeding with anonymous access.")
+elif FINMIND_API_TOKEN:
+    print("Attempting login with API Token...")
+    try:
+        api = DataLoader(token=FINMIND_API_TOKEN)
+        api.taiwan_stock_info()
+        print("Logged in to FinMind with API Token.")
+        login_successful = True
+    except Exception as e_token:
+        print(f"Failed to login with API Token: {e_token}")
+        print("Proceeding with anonymous access.")
+else:
+    print("No credentials found. Proceeding with anonymous access.")
+
+def get_financial_statement_fields(stock_ids, start_date="2022-01-01"):
+    """
+    Fetches the latest financial statement (綜合損益表) for given stock IDs
+    and prints unique 'type' and 'origin_name' fields.
+    """
+    if not login_successful:
+        print("\nWarning: Not logged in. API requests will be limited.")
+
+    if isinstance(stock_ids, str):
+        stock_ids = [stock_ids]
+
+    for stock_id in stock_ids:
+        print(f"\n--- Fields for Stock ID: {stock_id} (FinancialStatements) ---")
+        try:
+            df = api.taiwan_stock_financial_statement(stock_id=stock_id, start_date=start_date)
+            if df is not None and not df.empty:
+                # Ensure date column is datetime and sort to get the latest report easily
+                df['date'] = pd.to_datetime(df['date'])
+                df = df.sort_values(by='date', ascending=False)
+                
+                latest_report_date = df['date'].iloc[0]
+                print(f"Latest report date for {stock_id}: {latest_report_date.strftime('%Y-%m-%d')}")
+                
+                df_latest = df[df['date'] == latest_report_date]
+                
+                unique_fields = df_latest[['type', 'origin_name']].drop_duplicates().reset_index(drop=True)
+                print("Unique 'type' (FinMind Normalized) and 'origin_name' (Original Report Name):")
+                for _, row in unique_fields.iterrows():
+                    print(f"  Type: {row['type']:<50} Origin Name: {row['origin_name']}")
+                
+                # Specifically check for fields related to net income
+                print("\n  Checking for common net income related fields:")
+                common_income_fields = [
+                    'EquityAttributableToOwnersOfParent', # 歸屬於母公司業主之權益
+                    'ProfitLoss', # 本期淨利（淨損）
+                    'NetIncome', # (Often a synonym or a more general term)
+                    'IncomeAfterTax', # 稅後淨利
+                    'ProfitLossFromContinuingOperations', # 繼續營業單位本期淨利（淨損）
+                    'ComprehensiveIncomeAttributableToOwnersOfParent' # 歸屬於母公司業主之綜合損益總額
+                ]
+                for field_type in common_income_fields:
+                    if field_type in unique_fields['type'].values:
+                        value_row = df_latest[df_latest['type'] == field_type]
+                        if not value_row.empty:
+                             print(f"    Found '{field_type}': Value = {value_row['value'].iloc[0]}, Origin Name = '{value_row['origin_name'].iloc[0]}'")
+                    else:
+                        print(f"    '{field_type}' not found in this report's 'type' column.")
+
+            else:
+                print(f"No financial statement data found for {stock_id} from {start_date}.")
+        except Exception as e:
+            print(f"Error fetching financial statement for {stock_id}: {e}")
+
+def get_cash_flows_statement_fields(stock_ids, start_date="2022-01-01"):
+    """
+    Fetches the latest cash flows statement for given stock IDs
+    and prints unique 'type' and 'origin_name' fields.
+    """
+    if not login_successful:
+        print("\nWarning: Not logged in. API requests will be limited.")
+
+    if isinstance(stock_ids, str):
+        stock_ids = [stock_ids]
+
+    for stock_id in stock_ids:
+        print(f"\n--- Fields for Stock ID: {stock_id} (CashFlowsStatement) ---")
+        try:
+            df = api.taiwan_stock_cash_flows_statement(stock_id=stock_id, start_date=start_date)
+            if df is not None and not df.empty:
+                # Ensure date column is datetime and sort to get the latest report easily
+                df['date'] = pd.to_datetime(df['date'])
+                df = df.sort_values(by='date', ascending=False)
+                
+                latest_report_date = df['date'].iloc[0]
+                print(f"Latest report date for {stock_id}: {latest_report_date.strftime('%Y-%m-%d')}")
+                
+                df_latest = df[df['date'] == latest_report_date]
+                
+                unique_fields = df_latest[['type', 'origin_name']].drop_duplicates().reset_index(drop=True)
+                print("Unique 'type' (FinMind Normalized) and 'origin_name' (Original Report Name):")
+                for _, row in unique_fields.iterrows():
+                    print(f"  Type: {row['type']:<50} Origin Name: {row['origin_name']}")
+                
+                # Specifically check for fields related to capex
+                print("\n  Checking for common capex related fields:")
+                common_capex_fields = [
+                    'AcquisitionOfPropertyPlantAndEquipment', # 購置不動產、廠房及設備
+                    'FixedAssetsPurchases', # 購置固定資產
+                    'PurchaseOfPropertyPlantAndEquipment', # 購置不動產、廠房及設備
+                    'CashOutflowForAcquisitionOfPropertyPlantAndEquipment', # 購置不動產、廠房及設備的現金流出
+                    'IncreaseInPropertyPlantAndEquipment', # 不動產、廠房及設備的增加
+                    'AcquisitionOfIntangibleAssetsOtherThanGoodwill', # 購置無形資產（不含商譽）
+                    'CashOutflowForAcquisitionOfIntangibleAssets', # 購置無形資產的現金流出
+                    'InvestmentInPropertyPlantAndEquipment', # 投資於不動產、廠房及設備
+                    'PurchaseOfFixedAssets', # 購置固定資產
+                    'PurchaseOfIntangibleAssets', # 購置無形資產
+                    'CashSpentOnPropertyPlantAndEquipment', # 用於不動產、廠房及設備的現金支出
+                    'CashSpentOnIntangibleAssets', # 用於無形資產的現金支出
+                    'CapitalExpenditures', # 資本支出
+                    'CapitalSpending', # 資本支出
+                    'CapitalExpenditure', # 資本支出
+                    'Capex', # 資本支出
+                    'InvestmentInFixedAssets', # 投資於固定資產
+                    'InvestmentInIntangibleAssets', # 投資於無形資產
+                    'ExpenditureOnPropertyPlantAndEquipment', # 用於不動產、廠房及設備的支出
+                    'ExpenditureOnIntangibleAssets', # 用於無形資產的支出
+                    'PurchaseOfLongTermAssets', # 購置長期資產
+                    'InvestmentInLongTermAssets', # 投資於長期資產
+                    'CashSpentOnLongTermAssets', # 用於長期資產的現金支出
+                    'ExpenditureOnLongTermAssets', # 用於長期資產的支出
+                    'PurchaseOfCapitalAssets', # 購置資本資產
+                    'InvestmentInCapitalAssets', # 投資於資本資產
+                    'CashSpentOnCapitalAssets', # 用於資本資產的現金支出
+                    'ExpenditureOnCapitalAssets', # 用於資本資產的支出
+                    'PurchaseOfNonCurrentAssets', # 購置非流動資產
+                    'InvestmentInNonCurrentAssets', # 投資於非流動資產
+                    'CashSpentOnNonCurrentAssets', # 用於非流動資產的現金支出
+                    'ExpenditureOnNonCurrentAssets', # 用於非流動資產的支出
+                ]
+                for field_type in common_capex_fields:
+                    if field_type in unique_fields['type'].values:
+                        value_row = df_latest[df_latest['type'] == field_type]
+                        if not value_row.empty:
+                            print(f"    Found '{field_type}': Value = {value_row['value'].iloc[0]}, Origin Name = '{value_row['origin_name'].iloc[0]}'")
+                    else:
+                        print(f"    '{field_type}' not found in this report's 'type' column.")
+
+            else:
+                print(f"No cash flows statement data found for {stock_id} from {start_date}.")
+        except Exception as e:
+            print(f"Error fetching cash flows statement for {stock_id}: {e}")
 
 if __name__ == "__main__":
-    # 測試獲取資產負債表
-    fetch_and_print_statement(dataset_name='TaiwanStockBalanceSheet', stock_id=STOCK_ID, start_date=START_DATE)
+    # Example usage: Test a few stocks that previously had issues
+    test_stock_ids = ["2314", "2330", "2317"] # 台揚, 台積電, 鴻海
     
-    # 測試獲取現金流量表
-    fetch_and_print_statement(dataset_name='TaiwanStockCashFlowsStatement', stock_id=STOCK_ID, start_date=START_DATE)
+    # Or prompt user for input
+    # stock_input = input("Enter stock ID(s) to test, separated by comma (e.g., 2330,2317): ")
+    # test_stock_ids = [s.strip() for s in stock_input.split(',')]
+    
+    if test_stock_ids and test_stock_ids[0]: # Check if not empty list or list with empty string
+        get_financial_statement_fields(test_stock_ids)
+        get_cash_flows_statement_fields(test_stock_ids)
+    else:
+        print("No stock IDs entered. Exiting.")
 
-    # 測試獲取綜合損益表 (可以和我們現有的 TWSE API 結果比較)
-    fetch_and_print_statement(dataset_name='TaiwanStockFinancialStatement', stock_id=STOCK_ID, start_date=START_DATE)
-
-    print("\n--- FinMind API Test Script Finished ---")
-    print("Please check the output above for column names and sample data.")
-    print("You might need to adjust the 'required_cols' in the script based on actual FinMind output.")
-    print("Also, check if a FinMind API token is required for more frequent access or for certain datasets.")
+    # You can also test other FinMind functions here if needed
+    # For example, to see all available datasets:
+    # print(api.list_data_id(dataset="TaiwanStockInfo"))
+    # print(api.get_dataset_info(dataset_name="TaiwanStockFinancialStatement"))

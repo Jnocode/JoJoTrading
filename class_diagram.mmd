@@ -11,16 +11,16 @@ classDiagram
         VALUATION
         FILTERING
         RESULTS_DISPLAY
-        EXPORT
-        ERROR
-        END
+        ERROR 
+        IDLE 
+        # EXPORT and END are not currently implemented or used in the state machine
     }
 
-    class BaseState {
+    class State {
         <<Abstract>>
-        +execute(context) JoJoState
-        +on_enter(context) void
-        +on_exit(context) void
+        +context dict
+        +machine JoJoStateMachine
+        +execute() void
     }
 
     class ConfigLoadState
@@ -30,30 +30,33 @@ classDiagram
     class ValuationState
     class FilteringState
     class ResultsDisplayState
-    class ExportState
+    %% class ExportState %% Not yet implemented
     class ErrorState
-    class EndState
+    class IdleState   
+    %% Added IDLE state
+    %% class EndState %% Not yet implemented
 
-    ConfigLoadState --|> BaseState
-    UiInitState --|> BaseState
-    IndustryProcessState --|> BaseState
-    DataFetchState --|> BaseState
-    ValuationState --|> BaseState
-    FilteringState --|> BaseState
-    ResultsDisplayState --|> BaseState
-    ExportState --|> BaseState
-    ErrorState --|> BaseState
-    EndState --|> BaseState
+    ConfigLoadState --|> State
+    UiInitState --|> State
+    IndustryProcessState --|> State
+    DataFetchState --|> State
+    ValuationState --|> State
+    FilteringState --|> State
+    ResultsDisplayState --|> State
+    %% ExportState --|> State
+    ErrorState --|> State
+    IdleState --|> State 
+    %% Added IDLE state inheritance
 
     class JoJoStateMachine {
-        -current_jojo_state_enum JoJoState
-        -context dict
-        -states dict~JoJoState, BaseState~
-        +run() void
+        +current_state JoJoState
+        +context dict
         +__init__() void
+        +transition_to(next_state JoJoState) void
+        +execute_state() void
     }
-    JoJoStateMachine o-- JoJoState : "current state"
-    JoJoStateMachine *-- BaseState : "manages state objects"
+    JoJoStateMachine o-- JoJoState : "current_state"
+    JoJoStateMachine *-- State : "uses state objects" # Changed from manages to uses for clarity
 
     %% --- AppModule (app.py) ---
     class StreamlitApp {
@@ -69,13 +72,16 @@ classDiagram
         <<Module Functions>>
         +get_all_companies_basic_data(context) list
         +filter_industry_stocks(selected_industry_name, name_to_code_map, all_companies_data) list
-        +get_financial_reports_for_stock(stock_detail, context) tuple
-        +fetch_stock_financials_from_downloaded(stock_code, api_suffix, downloaded_reports) dict
-        +calculate_dcf_valuation(stock_code, financials, risk_preference, context) dict
+        # +get_financial_reports_for_stock(stock_detail, context) tuple # This was for old TWSE API
+        # +fetch_stock_financials_from_downloaded(stock_code, api_suffix, downloaded_reports) dict # This was for old TWSE API
+        +fetch_finmind_financial_statement_data(stock_id str, start_date str, statement_type str) DataFrame
+        +extract_finmind_items(df DataFrame, target_items_map dict, report_date_str str, max_lookback_periods int) dict
+        +fetch_finmind_stock_price(stock_id str, target_date_str str) float
+        +calculate_dcf_valuation(stock_code str, financials dict, risk_preference float, context dict) dict
     }
     DataFetchState ..> DataHandler_Functions : uses
     ValuationState ..> DataHandler_Functions : uses
-    ConfigLoadState ..> DataHandler_Functions : (implicitly, for industries.json)
+    ConfigLoadState ..> DataHandler_Functions : uses (for get_all_companies_basic_data)
 
     %% --- ConfigurationFiles ---
     class industries_json {
