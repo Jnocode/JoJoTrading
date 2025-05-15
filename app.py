@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd # Import pandas
 from jojo_state_machine import JoJoStateMachine, JoJoState, State # 確保 State 也導入了 (原 BaseState)
+from modules.i18n import t
 
 # --- Helper function to drive state machine ---
 def drive_state_machine(machine, target_state=None):
@@ -133,15 +134,27 @@ else:
 machine = st.session_state.jojo_machine
 print(f"--- Current machine state (retrieved from session_state): {machine.current_state} ---") # DEBUG PRINT
 
-# --- UI 側邊欄：開發者模式切換 ---
+# --- UI 側邊欄：語言切換與開發者模式切換 ---
+# 語言切換
+if "language" not in st.session_state:
+    st.session_state["language"] = "zh"
+
+lang = st.sidebar.selectbox(
+    t("select_language", st.session_state["language"]),
+    options=[("zh", t("chinese", "zh")), ("en", t("english", "en"))],
+    format_func=lambda x: x[1],
+    index=0 if st.session_state["language"] == "zh" else 1
+)[0]
+st.session_state["language"] = lang
+
 # 確保 developer_mode_active 在 session_state 中存在
 if 'developer_mode_active' not in st.session_state:
     st.session_state.developer_mode_active = machine.context.get('developer_mode', False)
 
 developer_mode_ui_switch = st.sidebar.checkbox(
-    "啟用開發者模式 (使用模擬數據)", 
+    t("use_simulated_data", lang), 
     value=st.session_state.developer_mode_active,
-    key="dev_mode_checkbox" # 給予 key
+    key="dev_mode_checkbox"
 )
 
 # 如果 UI 上的開關狀態改變，則更新 session_state 和狀態機 context
@@ -149,9 +162,7 @@ if developer_mode_ui_switch != st.session_state.developer_mode_active:
     st.session_state.developer_mode_active = developer_mode_ui_switch
     machine.context['developer_mode'] = developer_mode_ui_switch
     print(f"開發者模式已切換為: {machine.context['developer_mode']}")
-    # 可能需要重置某些狀態或重新執行 CONFIG_LOAD 以便模擬數據正確加載
-    # 簡單起見，這裡只更新 context，DataFetchState 會在執行時檢查此標誌
-    st.rerun() # 重新執行以讓 UI 和狀態機響應模式變化
+    st.rerun()
 
 # --- UI 主渲染與狀態機互動 ---
 if machine.context.get('developer_mode', False):
@@ -181,10 +192,62 @@ if machine.current_state == JoJoState.UI_INIT: # 使用 machine.current_state
     if current_selected_industry_name not in industry_names_for_ui and industry_names_for_ui:
         current_selected_industry_name = industry_names_for_ui[0]
 
-    selected_industry_name_from_ui = st.selectbox(
-        "請選擇產業：",
-        options=industry_names_for_ui,
-        index=industry_names_for_ui.index(current_selected_industry_name) if current_selected_industry_name in industry_names_for_ui and industry_names_for_ui else 0
+    # 新增：模式切換（產業篩選/個股直查）
+    mode = st.radio(
+        "選擇模式：",
+        options=["產業篩選模式", "個股直查模式"],
+        index=0,
+        horizontal=True
+    )
+
+    selected_industry_name_from_ui = None
+    selected_stock_codes = []
+    manual_stock_codes = ""
+
+    if mode == "產業篩選模式":
+        selected_industry_name_from_ui = st.selectbox(
+            "請選擇產業：",
+            options=industry_names_for_ui,
+            index=industry_names_for_ui.index(current_selected_industry_name) if current_selected_industry_name in industry_names_for_ui and industry_names_for_ui else 0
+        )
+
+        # 取得該產業下所有個股清單
+        all_companies = machine.context.get('all_companies_openapi_data', [])
+        industry_code = None
+        for item in machine.context.get('industry_data', {}).get('industries', []):
+            if item.get('name') == selected_industry_name_from_ui:
+                industry_code = item.get('code')
+                break
+        stock_options = []
+        if industry_code:
+            stock_options = [c['code'] for c in all_companies if c.get('industry_code') == str(industry_code)]
+        stock_options = sorted(stock_options)
+        selected_stock_codes = st.multiselect(
+            "（可選）指定個股代號篩選：",
+            options=stock_options,
+            default=[],
+            help="如不選，則篩選整個產業；如選，僅針對這些個股進行分析"
+        )
+    else:
+        manual_stock_codes = st.text_input(
+            "請輸入欲查詢的股票代號（可用逗號、空白或換行分隔）：",
+            value="",
+            help="例如：2330, 2317 或 2330 2317"
+        )
+        # 解析輸入
+        import re
+        selected_stock_codes = [code.strip() for code in re.split(r"[,\s]+", manual_stock_codes) if code.strip()]
+        selected_industry_name_from_ui = None  # 不選產業
+
+    machine.context['selected_stock_codes'] = selected_stock_codes
+
+    # 新增：財報資料頻率選擇
+    freq_options = ["季度", "年度"]
+    default_freq = machine.context.get('financial_data_freq', "季度")
+    selected_freq_from_ui = st.selectbox(
+        "財報資料頻率：",
+        options=freq_options,
+        index=freq_options.index(default_freq) if default_freq in freq_options else 0
     )
     
     risk_options_labels_with_custom = risk_options_labels + ["自訂"]
@@ -216,15 +279,17 @@ if machine.current_state == JoJoState.UI_INIT: # 使用 machine.current_state
     else: # Fallback if selected_risk_label_from_ui is not in dict (e.g. "N/A" or other issues)
         actual_risk_preference = machine.context.get('default_risk_premium', 0.04)
 
-    # 新增：最小潛在報酬率篩選輸入
-    min_potential_return_percentage = st.number_input(
-        "篩選條件：最小潛在報酬率 (%)",
-        min_value=-100.0,
-        max_value=1000.0, # 允許較大的正報酬
-        value=machine.context.get('min_potential_return_filter_percentage', 20.0), # 預設20%
-        step=1.0,
-        help="設定篩選股票時，期望的最低潛在報酬率。例如輸入 20 表示至少 20%。"
-    )
+    # 新增：最小潛在報酬率篩選輸入（僅產業篩選模式顯示）
+    min_potential_return_percentage = None
+    if mode == "產業篩選模式":
+        min_potential_return_percentage = st.number_input(
+            "篩選條件：最小潛在報酬率 (%)",
+            min_value=-100.0,
+            max_value=1000.0, # 允許較大的正報酬
+            value=machine.context.get('min_potential_return_filter_percentage', 20.0), # 預設20%
+            step=1.0,
+            help="設定篩選股票時，期望的最低潛在報酬率。例如輸入 20 表示至少 20%。"
+        )
 
     if st.button("開始篩選股票"):
         machine.context['selected_industry_name'] = selected_industry_name_from_ui 
@@ -232,9 +297,21 @@ if machine.current_state == JoJoState.UI_INIT: # 使用 machine.current_state
         machine.context['selected_risk_label'] = selected_risk_label_from_ui 
         if selected_risk_label_from_ui == "自訂":
             machine.context['custom_risk_premium_value'] = actual_risk_preference 
+
+        # 新增：將財報資料頻率寫入 context
+        machine.context['financial_data_freq'] = selected_freq_from_ui
         
-        machine.context['min_potential_return_filter'] = min_potential_return_percentage / 100.0 # 轉換為小數
-        machine.context['min_potential_return_filter_percentage'] = min_potential_return_percentage # 保存百分比值用於UI回顯
+        # 產業模式才有潛在報酬率篩選
+        if mode == "產業篩選模式":
+            machine.context['potential_return_threshold'] = min_potential_return_percentage / 100.0 # 統一用這個key
+            machine.context['min_potential_return_filter_percentage'] = min_potential_return_percentage # 保存百分比值用於UI回顯
+        else:
+            # 個股直查模式不做潛在報酬率篩選
+            machine.context['potential_return_threshold'] = None
+            machine.context['min_potential_return_filter_percentage'] = None
+
+        # 新增：個股代號篩選
+        machine.context['selected_stock_codes'] = selected_stock_codes
 
         machine.context['user_clicked_filter_button'] = True 
         machine.transition_to(JoJoState.INDUSTRY_PROCESS) # 明確轉換到下一個處理狀態
@@ -270,68 +347,87 @@ elif machine.current_state == JoJoState.RESULTS_DISPLAY: # 使用 machine.curren
         st.write(f"共篩選出 {len(filtered_stocks_data)} 支潛在特價股：")
         
         df_results = pd.DataFrame(filtered_stocks_data)
-        
-        # 準備 st.dataframe 的 column_config
-        # 確保鍵名與 DataFrame 的欄位名一致
-        display_columns_config = {}
+
+        # 中文欄位對應
+        column_map = {
+            'stock_code': '代號',
+            'name': '名稱',
+            'intrinsic_value_per_share': '估計內在價值',
+            'current_market_price': '目前市價',
+            'potential_return_display': '潛在報酬 (%)',
+            'source_eps': '來源EPS',
+            'calculated_fcf_eps': '計算FCFEps',
+            'data_year_quarter': '財報年月',
+            'used_discount_rate_display': '折現率 (%)',
+            'warning': '警告',
+            # 其餘欄位如需顯示可再補充
+        }
+        # 先處理顯示欄位與順序
+        display_columns = [
+            'stock_code', 'name', 'intrinsic_value_per_share', 'current_market_price',
+            'potential_return_display', 'source_eps', 'calculated_fcf_eps',
+            'data_year_quarter', 'used_discount_rate_display', 'warning'
+        ]
+        # 預先格式化百分比欄位
         if not df_results.empty:
-            # 預先格式化百分比欄位
             if 'potential_return' in df_results.columns:
                 df_results['potential_return_display'] = df_results['potential_return'].apply(lambda x: f"{x*100:.2f}%" if pd.notna(x) else "N/A")
             if 'used_discount_rate' in df_results.columns:
                 df_results['used_discount_rate_display'] = df_results['used_discount_rate'].apply(lambda x: f"{x*100:.2f}%" if pd.notna(x) else "N/A")
 
-            # 定義欄位配置
-            column_order = [] # 用於指定顯示順序
+        # 只取要顯示的欄位，並轉中文
+        df_display = df_results[[col for col in display_columns if col in df_results.columns]].copy()
+        df_display.columns = [column_map.get(col, col) for col in df_display.columns]
 
-            # 逐一檢查並配置欄位
-            if 'stock_code' in df_results.columns:
-                display_columns_config['stock_code'] = st.column_config.TextColumn("代號", width="small")
-                column_order.append('stock_code')
-            if 'name' in df_results.columns:
-                display_columns_config['name'] = st.column_config.TextColumn("名稱", width="medium")
-                column_order.append('name')
-            if 'intrinsic_value_per_share' in df_results.columns:
-                display_columns_config['intrinsic_value_per_share'] = st.column_config.NumberColumn("估計內在價值", format="%.2f", width="small")
-                column_order.append('intrinsic_value_per_share')
-            if 'current_market_price' in df_results.columns:
-                display_columns_config['current_market_price'] = st.column_config.NumberColumn("目前市價", format="%.2f", width="small")
-                column_order.append('current_market_price')
-            if 'potential_return_display' in df_results.columns:
-                display_columns_config['potential_return_display'] = st.column_config.TextColumn("潛在報酬 (%)", width="small")
-                column_order.append('potential_return_display')
-            if 'source_eps' in df_results.columns:
-                display_columns_config['source_eps'] = st.column_config.NumberColumn("來源EPS", format="%.2f", width="small")
-                column_order.append('source_eps')
-            if 'calculated_fcf_eps' in df_results.columns:
-                display_columns_config['calculated_fcf_eps'] = st.column_config.NumberColumn("計算FCFEps", format="%.2f", width="small")
-                column_order.append('calculated_fcf_eps')
-            if 'data_year_quarter' in df_results.columns:
-                display_columns_config['data_year_quarter'] = st.column_config.TextColumn("財報年月", width="small")
-                column_order.append('data_year_quarter')
-            if 'used_discount_rate_display' in df_results.columns:
-                display_columns_config['used_discount_rate_display'] = st.column_config.TextColumn("折現率 (%)", width="small") # 標題也改一下
-                column_order.append('used_discount_rate_display')
-            if 'warning' in df_results.columns:
-                display_columns_config['warning'] = st.column_config.TextColumn("警告", width="large")
-                column_order.append('warning')
-            
-            # 顯示 DataFrame，如果 column_order 非空，則按指定順序顯示
-            if column_order:
-                st.dataframe(df_results[column_order], column_config=display_columns_config, use_container_width=True, hide_index=True)
-            else: # 如果 column_order 為空 (例如 df_results 為空或沒有匹配的欄位)，則直接顯示
-                st.dataframe(df_results, column_config=display_columns_config, use_container_width=True, hide_index=True)
+        # st.dataframe 顯示
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+
     else:
         st.info("沒有篩選到符合條件的股票，或仍在處理中。請檢查篩選條件或資料來源。")
 
+    import os
+    from datetime import datetime
+
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("匯出結果"):
-            machine.context['user_clicked_export_button'] = True
-            machine.transition_to(JoJoState.EXPORT) # 明確轉換
-            # drive_state_machine(machine)
-            machine.context['user_clicked_export_button'] = False
-            st.rerun()
+        # 合併下載按鈕：直接在結果頁顯示
+        if st.button("下載 CSV"):
+            export_dir = "export"
+            os.makedirs(export_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            csv_path = os.path.join(export_dir, f"jojo_export_{timestamp}.csv")
+            df_display.to_csv(csv_path, index=False, encoding="utf-8-sig")
+            with open(csv_path, "rb") as f:
+                st.download_button(
+                    label="點此下載 CSV 檔案",
+                    data=f,
+                    file_name=os.path.basename(csv_path),
+                    mime="text/csv"
+                )
+        # Excel 下載
+        try:
+            import openpyxl
+            excel_supported = True
+        except ImportError:
+            excel_supported = False
+
+        if excel_supported:
+            if st.button("下載 Excel"):
+                export_dir = "export"
+                os.makedirs(export_dir, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                excel_path = os.path.join(export_dir, f"jojo_export_{timestamp}.xlsx")
+                df_display.to_excel(excel_path, index=False)
+                with open(excel_path, "rb") as f:
+                    st.download_button(
+                        label="點此下載 Excel 檔案",
+                        data=f,
+                        file_name=os.path.basename(excel_path),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+        else:
+            st.info("如需 Excel 匯出，請安裝 openpyxl 套件。")
+
     with col2:
         if st.button("重新查詢"):
             machine.context['user_clicked_new_query_button'] = True
@@ -342,9 +438,37 @@ elif machine.current_state == JoJoState.RESULTS_DISPLAY: # 使用 machine.curren
 elif machine.current_state == JoJoState.EXPORT: # 使用 machine.current_state
     with st.spinner("正在匯出結果..."):
         machine.execute_state() # 觸發執行
-    st.success("匯出完成！(模擬)") # 假設匯出成功
+
+    # 匯出完成後，提供下載按鈕
+    csv_path = machine.context.get('export_file_path')
+    excel_path = machine.context.get('export_file_path_excel')
+    st.success("匯出完成！請下載檔案：")
+    import os
+
+    if csv_path and os.path.exists(csv_path):
+        with open(csv_path, "rb") as f:
+            st.download_button(
+                label="下載 CSV",
+                data=f,
+                file_name=os.path.basename(csv_path),
+                mime="text/csv"
+            )
+    else:
+        st.warning("找不到可下載的 CSV 檔案。")
+
+    if excel_path and os.path.exists(excel_path):
+        with open(excel_path, "rb") as f:
+            st.download_button(
+                label="下載 Excel",
+                data=f,
+                file_name=os.path.basename(excel_path),
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    else:
+        st.info("如需 Excel 匯出，請安裝 openpyxl 套件。")
+
     # ExportState 應該轉換回 ResultsDisplay 或 UI_INIT
-    st.rerun() 
+    # st.rerun()  # ← 已移除，讓下載按鈕能顯示
 
 elif machine.current_state == JoJoState.ERROR: # 使用 machine.current_state
     st.error(f"發生錯誤：{machine.context.get('error_message', '未知錯誤')}")

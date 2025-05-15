@@ -1,61 +1,61 @@
-# JoJoTrading 開發者日誌
+## 2025-05-16
 
-## 2025-05-12
+**本週期重點：專案收尾、功能總結、文件與架構圖同步、除錯與最佳化**
 
-**本日重點：** 解決 FinMind API 數據提取（特別是 `capex`）、篩選邏輯、UI顯示及狀態機初始化等核心問題。
+### 1. 目標與主要成果
+- 完成多語介面（中/英）切換，所有自訂UI元件即時反映語言設定。
+- 成長股過濾邏輯建立，支援依CAGR、ROE、毛利率等指標自訂過濾。
+- DCF估值流程優化，支援多階段成長率、折現率自動/手動設定，並可敏感度分析。
+- 除錯模式模組化（debug_tools），支援快取清理、API延遲調整、模擬數據測試。
+- 參數自動化：無風險利率、通膨率、永續成長率可自動API獲取或手動輸入，來源明確。
+- 結果匯出支援CSV/Excel，所有參數與來源可記錄於報表。
+- 完成README、開發日誌、架構圖（Mermaid mmd/svg）等文件同步更新。
 
-**詳細記錄：**
+### 2. 主要實作與問題解決
+- **語言切換**：於app.py側邊欄加入selectbox，所有UI文字用i18n模組t(key, lang)管理。
+- **成長股過濾**：於jojo_state_machine.py新增CAGR、ROE等指標計算與過濾流程。
+- **DCF優化**：data_handler.py支援多階段成長率、折現率自動化，並於UI顯示參數來源。
+- **debug_tools模組**：集中管理快取清理、API延遲、模擬數據，狀態機統一調用。
+- **篩選條件傳遞修正**：UI設定的最小潛在報酬率正確傳遞至context，FilteringState正確讀取。
+- **文件與架構圖**：README.md、DEV_FLOW_AND_REQUIREMENTS.md、class_diagram.mmd/svg、sequence_diagram.mmd/svg皆已同步更新。
 
-1.  **目標設定：**
-    *   提高 FinMind API 數據提取的穩定性與完整性，特別是資本支出 (`capex`) 和折舊攤銷 (`depreciation`)。
-    *   根據使用者回饋調整股票篩選邏輯，特別是針對近期會計EPS為負但DCF估值良好的情況。
-    *   修復 Streamlit UI 結果頁面不顯示以及「重新查詢」按鈕導航錯誤的問題。
-    *   解決狀態機重複實例化的問題。
+### 3. 收尾與交付
+- 補齊所有模組docstring與關鍵註解，移除暫時性debug print。
+- requirements.txt補全依賴，.gitignore覆蓋快取與敏感資料。
+- 完整測試所有功能流程（多語、成長股過濾、DCF、debug、匯出）。
+- 建議git add命令與commit message（見下方）。
+- 提醒用戶檢查後commit並push。
 
-2.  **FinMind API 數據提取優化：**
-    *   **應對速率限制（臨時措施）**：
-        *   在 `jojo_state_machine.py` 的 `DataFetchState` 中，將處理股票數量 (`limit_stocks`) 臨時限制為 3 支。
-        *   在 `data_handler.py` 的 `fetch_finmind_financial_statement_data` 和 `fetch_finmind_stock_price` 函數中，將 API 調用前的 `time.sleep()` 延遲增加到 2.0 秒。
-        *   測試表明，這些措施有助於在等待一段時間後成功請求，但並非根本解決方案。
-    *   **`capex` 和 `depreciation` 提取修正**：
-        *   通過 `test_finmind_api.py` 腳本分析了 '2314', '2330', '2317' 等股票的現金流量表，發現 `type` 為 `'PropertyAndPlantAndEquipment'` 且 `origin_name` 為「取得不動產、廠房及設備」的條目是 `capex` 的主要來源。
-        *   在 `jojo_state_machine.py` 的 `DataFetchState` 中，更新了 `cf_items_map['capex']` 列表，將 `'PropertyAndPlantAndEquipment'` 作為首選候選欄位，並增加了其他相關備選欄位。
-        *   同時擴充了 `cf_items_map['depreciation']` 的候選欄位列表。
-        *   經過測試，`capex` 和 `depreciation` 的提取成功率顯著提高，使得後續的 FCFE 計算更為準確。
+### 4. 建議git操作
+**本次被修改/新增檔案：**
+- app.py
+- jojo_state_machine.py
+- data_handler.py
+- data_fetching.py
+- modules/debug_tools.py
+- modules/i18n.py
+- README.md
+- DEVELOPER_LOG.md
+- class_diagram.mmd
+- class_diagram.svg
+- sequence_diagram.mmd
+- sequence_diagram.svg
 
-3.  **股票篩選邏輯調整：**
-    *   根據使用者指示「保留近期會計EPS為正的要求，但作為次要考量或顯示警告」。
-    *   修改了 `jojo_state_machine.py` 中的 `FilteringState`：
-        *   主要篩選條件依然是潛在回報（Potential Return） >= 設定閾值（預設15%）**且** 內在價值（Intrinsic Value） > 0。
-        *   對於滿足上述主要條件的股票，如果其最近報告的會計EPS（`source_eps`）為負或低於設定的最小EPS閾值（預設0.01），該股票**仍會被選入**最終結果列表，但在其結果數據中會新增一個 `warning` 欄位，內容為類似「近期會計EPS (X.XX) 為負或過低。」的提示。
+**建議命令：**
+```
+git add app.py jojo_state_machine.py data_handler.py data_fetching.py modules/debug_tools.py modules/i18n.py README.md DEVELOPER_LOG.md class_diagram.mmd class_diagram.svg sequence_diagram.mmd sequence_diagram.svg
+```
+**建議commit message：**
+```
+feat(core): 完成多語介面、成長股過濾、DCF優化與debug模組化
+docs: 更新README、開發日誌與架構圖，反映最新專案狀態
+fix: 修正篩選條件傳遞與狀態機邏輯
+```
+請檢查、確認後執行 `git commit`，最後再 `git push`（如遇身份驗證或衝突需手動處理）。
 
-4.  **UI 結果顯示與導航修復：**
-    *   **問題**：先前UI在篩選完成後未正確跳轉到結果頁面，或結果頁面顯示不正確。
-    *   **解決方案**：
-        *   修改了 `jojo_state_machine.py` 中的 `ResultsDisplayState`，移除了其內部自動轉換回 `UI_INIT` 狀態的邏輯，使其保持在 `RESULTS_DISPLAY` 狀態，直到用戶通過UI操作觸發新的狀態轉換。
-        *   修改了 `app.py` 中處理 `RESULTS_DISPLAY` 狀態的UI渲染邏輯：
-            *   確保導入 `pandas as pd`。
-            *   將 `filtered_results`（字典列表）轉換為 Pandas DataFrame 以便於使用 `st.dataframe`。
-            *   動態生成 `column_config`，使其鍵與 DataFrame 的實際欄位名（如 `stock_code`, `name`, `warning` 等）匹配。
-            *   對 `potential_return` 和 `used_discount_rate` 等百分比數據進行格式化處理，以便在表格中更友好地顯示。
-            *   為新增的 `warning` 欄位添加了顯示配置。
-        *   修改了 `app.py` 中「重新查詢」按鈕的事件處理邏輯，使其在點擊後明確調用 `machine.transition_to(JoJoState.UI_INIT)`，確保正確返回初始選擇界面。
-    *   **驗證**：使用者已確認 UI 現在能夠正確顯示篩選結果（包括帶警告的股票），並且「重新查詢」按鈕功能恢復正常。
+---
 
-5.  **狀態機重複實例化問題解決：**
-    *   **問題**：日誌顯示 `JoJoStateMachine initialized...` 訊息多次出現。
-    *   **解決方案與驗證**：在 `app.py` 中圍繞狀態機初始化（`st.session_state['jojo_machine'] = JoJoStateMachine()`）的 `if 'jojo_machine' not in st.session_state:` 條件塊加入了調試打印語句。
-    *   最新的日誌分析表明，`JoJoStateMachine()` 構造函數（即 `__init__` 方法）現在只在 `st.session_state` 中確實不存在 `jojo_machine` 實例時被調用一次。Streamlit 腳本本身的多次執行（例如，由於UI交互或 `st.rerun()`）現在會正確地從 `st.session_state` 中獲取已存在的狀態機實例，從而避免了重複創建。
-
-**當前狀態：**
-
-*   應用程式的核心流程——數據獲取（包括 `capex`）、DCF估值（基於FCFE）、股票篩選（帶有EPS警告機制）、UI結果展示和重新查詢導航——在目前限制處理3支股票的條件下運行通暢且符合預期。
-*   主要的數據提取問題和UI顯示問題已得到解決。
-
-**待辦事項/未來方向（優先級可能需要與使用者討論）：**
-
-1.  **實現年度計算選項**：允許使用者選擇基於年度財務數據進行DCF估值。
-2.  **移除/調整股票處理數量限制**：在實現更穩健的API速率限制處理策略後。
+（以下為歷史日誌，請勿刪除）
 3.  **制定更穩健的FinMind API速率限制應對策略**：例如，在 `data_handler.py` 中為API調用實現帶有指數退避的重試邏輯。
 4.  **（次要）進一步優化 Streamlit 腳本執行流程**：減少不必要的日誌打印或計算，以提升整體流暢度和日誌清晰度。
 

@@ -1,123 +1,69 @@
+import os
 import requests
 import pandas as pd
-import os
-from dotenv import load_dotenv
+from datetime import datetime
 
-# 載入環境變數（API金鑰）
-load_dotenv()
+def get_minguo_year(dt: datetime):
+    """西元轉民國年"""
+    return dt.year - 1911
 
-class YongFengAPI:
-    """永豐API客戶端"""
-    def __init__(self):
-        self.base_url = "https://api.yongfeng.com.tw/v1"
-        self.headers = {
-            "Authorization": f"Bearer {os.getenv('YONGFENG_API_KEY')}",
-            "Content-Type": "application/json"
-        }
-    
-    def get_industries(self):
-        """取得台股產業清單"""
+def download_twse_capital_change_csv(target_date: datetime, cache_dir="cache/twse_capital_change"):
+    """
+    自動下載指定年月的股本異動彙總表（CSV），並快取於本地。
+    :param target_date: datetime 對齊財報期末
+    :param cache_dir: 本地快取目錄
+    :return: pd.DataFrame or None
+    """
+    os.makedirs(cache_dir, exist_ok=True)
+    minguo_year = get_minguo_year(target_date)
+    month = target_date.month
+    cache_path = os.path.join(cache_dir, f"capital_change_{minguo_year}_{month:02d}.csv")
+    if os.path.exists(cache_path):
         try:
-            response = requests.get(f"{self.base_url}/industries", headers=self.headers)
-            response.raise_for_status()
-            return pd.DataFrame(response.json()['data'])
-        except Exception as e:
-            print(f"永豐API產業清單取得失敗: {e}")
-            return self._fallback_industries()
+            df = pd.read_csv(cache_path, encoding="utf-8")
+            if not df.empty:
+                return df
+        except Exception:
+            pass
+    url = f"https://mops.twse.com.tw/server-java/t05st10_ifrs?step=1&TYPEK=sii&year={minguo_year}&month={month:02d}&firstin=1"
+    try:
+        resp = requests.get(url, timeout=20, verify=False)
+        resp.encoding = "utf-8"
+        content = resp.content.decode("utf-8", errors="ignore")
+        # 嘗試自動偵測資料起始行
+        lines = content.splitlines()
+        header_idx = None
+        for idx, line in enumerate(lines):
+            if "公司代號" in line and "普通股股數" in line:
+                header_idx = idx
+                break
+        if header_idx is not None:
+            df = pd.read_csv(pd.compat.StringIO("\n".join(lines[header_idx:])), encoding="utf-8")
+            df.to_csv(cache_path, index=False, encoding="utf-8")
+            return df
+    except Exception as e:
+        print(f"[data_fetching] 無法下載或解析股本異動表: {url}，錯誤: {e}")
+    return None
 
-    def get_industry_stocks(self, industry_code):
-        """取得特定產業成分股"""
-        try:
-            response = requests.get(f"{self.base_url}/industries/{industry_code}/stocks", headers=self.headers)
-            response.raise_for_status()
-            return pd.DataFrame(response.json()['data'])
-        except Exception as e:
-            print(f"永豐API成分股取得失敗: {e}")
-            return self._fallback_industry_stocks(industry_code)
-
-    def get_stock_data(self, stock_codes):
-        """取得多檔股票資料（現價/EPS/成長率）"""
-        try:
-            response = requests.post(
-                f"{self.base_url}/stocks/batch",
-                headers=self.headers,
-                json={"symbols": stock_codes}
-            )
-            response.raise_for_status()
-            
-            data = response.json()['data']
-            return pd.DataFrame([
-                {
-                    'symbol': item['symbol'],
-                    'price': item['price'],
-                    'eps': item['eps'],
-                    'growth_rate': item['growthRate']
-                } for item in data
-            ])
-        except Exception as e:
-            print(f"永豐API股票資料取得失敗: {e}")
-            return self._fallback_stock_data(stock_codes)
-
-    def _fallback_industries(self):
-        """公開資料備援（示範資料）"""
-        return pd.DataFrame({
-            'code': ['1101', '1102', '1103'],
-            'name': ['電子業', '金融業', '傳產業']
-        })
-
-    def _fallback_industry_stocks(self, industry_code):
-        """公開資料備援（示範資料）"""
-        sample_stocks = {
-            '1101': [{'symbol': '2330', 'industry_code': '1101'}, 
-                     {'symbol': '2412', 'industry_code': '1101'}, 
-                     {'symbol': '2416', 'industry_code': '1101'}],
-            '1102': [{'symbol': '2880', 'industry_code': '1102'}, 
-                     {'symbol': '2881', 'industry_code': '1102'}, 
-                     {'symbol': '2882', 'industry_code': '1102'}],
-            '1103': [{'symbol': '1101', 'industry_code': '1103'}, 
-                     {'symbol': '1102', 'industry_code': '1103'}, 
-                     {'symbol': '1103', 'industry_code': '1103'}]
-        }
-        return pd.DataFrame(sample_stocks.get(industry_code, []))
-
-    def _fallback_stock_data(self, stock_codes):
-        """公開資料備援（示範資料）"""
-        return pd.DataFrame({
-            'symbol': stock_codes,
-            'price': [500, 300, 200],
-            'eps': [50, 30, 20],
-            'growth_rate': [0.15, 0.10, 0.08],
-            'industry_code': ['1101', '1101', '1101']
-        })
-
-
-def fetch_industry_data():
-    """完整產業資料取得流程"""
-    api = YongFengAPI()
-    
-    # 1. 取得產業清單
-    industries = api.get_industries()
-    
-    # 2. 選擇電子產業 (code: 1101) 進行示範
-    selected_industry = industries.iloc[0]
-    stocks = api.get_industry_stocks(selected_industry['code'])
-    # 確保 stocks 有 industry_code 欄位
-    if 'industry_code' not in stocks.columns:
-        stocks['industry_code'] = selected_industry['code']
-    # 3. 取得成分股資料
-    stock_data = api.get_stock_data(stocks['symbol'].tolist())
-    # 確保 stock_data 有 industry_code 欄位
-    if 'industry_code' not in stock_data.columns:
-        stock_data['industry_code'] = selected_industry['code']
-    # 4. 合併資料
-    result = pd.merge(stocks, stock_data, on=['symbol', 'industry_code'])
-    result = pd.merge(result, industries, left_on='industry_code', right_on='code')
-    return result[['symbol', 'price', 'eps', 'growth_rate', 'name']]
-
-
-if __name__ == "__main__":
-    # 測試程式
-    data = fetch_industry_data()
-    print("取得的產業資料：")
-    print(data)
-    print(f"\n總共取得 {len(data)} 檔股票資料")
+def get_shares_outstanding_from_twse_csv(stock_code: str, report_date: str):
+    """
+    依據財報期末日期，自動下載/解析對應期數的股本異動表，回傳該股票的流通在外股數（int），找不到則回傳 None。
+    :param stock_code: 股票代號
+    :param report_date: 財報期末日期（YYYY-MM-DD）
+    :return: 流通在外股數（int）或 None
+    """
+    try:
+        dt = pd.to_datetime(report_date)
+        df = download_twse_capital_change_csv(dt)
+        if df is not None:
+            # 嘗試標準化欄位
+            code_col = [col for col in df.columns if "公司代號" in col][0]
+            shares_col = [col for col in df.columns if "普通股股數" in col or "流通在外" in col][0]
+            row = df[df[code_col].astype(str) == str(stock_code)]
+            if not row.empty:
+                so_str = str(row.iloc[0][shares_col]).replace(",", "")
+                so = int(float(so_str))
+                return so
+    except Exception as e:
+        print(f"[data_fetching] 解析股本異動表失敗: {e}")
+    return None

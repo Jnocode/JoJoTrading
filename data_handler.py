@@ -337,8 +337,7 @@ def fetch_finmind_financial_statement_data(stock_id: str, start_date: str, state
     print(f"  (data_handler) CACHE MISS/STALE: Fetching FinMind {statement_type} for {stock_id} from {start_date} via API...")
     df = None
     try:
-        # Add a small delay before each API call to respect rate limits
-        time.sleep(2.0) # Increased delay to approx 50 requests per minute
+        # 已移除API呼叫延遲，請注意API速率限制
         if statement_type == 'BalanceSheet':
             df = finmind_api.taiwan_stock_balance_sheet(stock_id=stock_id, start_date=start_date)
         elif statement_type == 'CashFlowsStatement':
@@ -552,7 +551,7 @@ def fetch_finmind_stock_price(stock_id: str, target_date_str: str = None):
 
     print(f"  (data_handler) PRICE CACHE MISS/STALE: Fetching FinMind daily price for {stock_id} from {start_date_api_str} to {end_date_api_str} via API...")
     try:
-        time.sleep(2.0) # Increased delay before API call
+        # 已移除API呼叫延遲，請注意API速率限制
         df_price = finmind_api.taiwan_stock_daily(stock_id=stock_id, start_date=start_date_api_str, end_date=end_date_api_str)
         if df_price is not None and not df_price.empty:
             print(f"    (data_handler) Successfully fetched FinMind daily price for {stock_id}. Shape: {df_price.shape}")

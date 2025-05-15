@@ -13,6 +13,7 @@ class JoJoState(Enum):
     VALUATION = auto()
     FILTERING = auto()
     RESULTS_DISPLAY = auto()
+    EXPORT = auto()
     ERROR = auto()
     IDLE = auto()
 
@@ -61,6 +62,8 @@ class JoJoStateMachine:
             FilteringState(self.context, self).execute()
         elif self.current_state == JoJoState.RESULTS_DISPLAY:
             ResultsDisplayState(self.context, self).execute()
+        elif self.current_state == JoJoState.EXPORT:
+            ExportState(self.context, self).execute()
         elif self.current_state == JoJoState.ERROR:
             ErrorState(self.context, self).execute()
         elif self.current_state == JoJoState.IDLE:
@@ -128,9 +131,12 @@ class IndustryProcessState(State):
     def execute(self):
         # Use selected_industry_name from context, which is set by app.py
         selected_industry = self.context.get('selected_industry_name')
+        selected_stock_codes = self.context.get('selected_stock_codes', [])
         print(f"Executing IndustryProcessState: 處理產業 '{selected_industry}'...")
-        if not selected_industry: # Check the correct context key
-            self.context['error_message'] = "錯誤：未選擇產業。"
+
+        # 修正：個股直查模式（未選產業但有個股代號）可直接進入 DATA_FETCH
+        if not selected_industry and not selected_stock_codes:
+            self.context['error_message'] = "錯誤：未選擇產業，也未輸入個股代號。"
             self.machine.transition_to(JoJoState.ERROR)
             return
 
@@ -141,15 +147,8 @@ class DataFetchState(State):
     def execute(self):
         print("Executing DataFetchState: 抓取資料...")
         selected_industry_name = self.context.get('selected_industry_name') # Use the correct context key
-        
-        # The way industries.json is structured, 'industries' is a list of dicts, not a dict itself.
-        # We need to build industry_name_to_code_map from this list.
-        industries_list = self.context['industry_data'].get('industries', [])
-        industry_name_to_code_map = {
-            item['name']: item['code'] 
-            for item in industries_list if isinstance(item, dict) and 'name' in item and 'code' in item
-        }
-        
+        selected_stock_codes = self.context.get('selected_stock_codes', [])
+
         # Ensure all companies basic data is loaded (should be from ConfigLoadState)
         if not self.context.get('all_companies_openapi_data'):
             self.context['all_companies_openapi_data'] = data_handler.get_all_companies_basic_data(self.context)
@@ -158,15 +157,45 @@ class DataFetchState(State):
                 self.machine.transition_to(JoJoState.ERROR)
                 return
 
-        # Filter stocks for the selected industry
-        self.context['industry_stocks_details'] = data_handler.filter_industry_stocks(
-            selected_industry_name,
-            industry_name_to_code_map,
-            self.context['all_companies_openapi_data']
-        )
+        # 支援個股直查模式
+        if selected_stock_codes and not selected_industry_name:
+            # 個股直查模式：只用「公司代號」欄位比對，並標準化欄位名稱
+            all_companies = self.context['all_companies_openapi_data']
+            self.context['industry_stocks_details'] = [
+                {
+                    "code": str(c.get("公司代號")),
+                    "name": c.get("公司名稱"),
+                    **c
+                }
+                for c in all_companies
+                if isinstance(c, dict) and str(c.get('公司代號')) in [str(code) for code in selected_stock_codes]
+            ]
+        else:
+            # 產業模式（維持原本 code 欄位邏輯）
+            industries_list = self.context['industry_data'].get('industries', [])
+            industry_name_to_code_map = {
+                item['name']: item['code'] 
+                for item in industries_list if isinstance(item, dict) and 'name' in item and 'code' in item
+            }
+            self.context['industry_stocks_details'] = [
+                {
+                    "code": str(s.get("公司代號", s.get("code"))),
+                    "name": s.get("公司名稱", s.get("name")),
+                    **s
+                }
+                for s in data_handler.filter_industry_stocks(
+                    selected_industry_name,
+                    industry_name_to_code_map,
+                    self.context['all_companies_openapi_data']
+                )
+            ]
+            if selected_stock_codes: # 產業模式下，若有選個股，再篩一次
+                self.context['industry_stocks_details'] = [
+                    s for s in self.context['industry_stocks_details'] if s['code'] in selected_stock_codes
+                ]
 
         if not self.context['industry_stocks_details']:
-            print(f"  (DataFetchState) 產業 '{selected_industry_name}' 中沒有找到任何股票。")
+            print(f"  (DataFetchState) 查無任何待處理股票（產業: '{selected_industry_name}', 個股: {selected_stock_codes}）。")
             self.context['processed_data'] = {} # Ensure it's empty
             self.machine.transition_to(JoJoState.VALUATION) # Proceed to valuation, which will handle empty data
             return
@@ -191,93 +220,109 @@ class DataFetchState(State):
         all_financial_data_for_stock = {}
         start_date_finmind = "2022-01-01" # For FinMind, fetch a longer history
 
-        # TEMPORARY: Limit the number of stocks processed to avoid API rate limits during testing
+        # 移除暫時的筆數限制，完整處理所有成分股
         processed_count = 0
-        limit_stocks = 3 # Reduce further to be safer with API limits
-        print(f"  (DataFetchState) DEBUG: Processing up to {limit_stocks} stocks to avoid API rate limits.")
 
         for stock_detail in self.context['industry_stocks_details']: # Iterate over the original full list
-            if processed_count >= limit_stocks:
-                print(f"  (DataFetchState) DEBUG: Reached processing limit of {limit_stocks} stocks.")
-                break # Exit the loop
-            
             stock_code = stock_detail['code']
-            print(f"  準備為 {stock_code} ({stock_detail['name']}) 從 FinMind 提取財報數據... (Processing {processed_count + 1}/{limit_stocks})")
+            print(f"  準備為 {stock_code} ({stock_detail['name']}) 從 FinMind 提取財報數據... (Processing {processed_count + 1}/{len(self.context['industry_stocks_details'])})")
             
             financial_data_for_stock = stock_detail.copy() # Start with basic info
             financial_data_for_stock['error'] = [] # Initialize error list
 
             # Fetch Balance Sheet (BS)
             df_bs = data_handler.fetch_finmind_financial_statement_data(stock_code, start_date_finmind, 'BalanceSheet')
-            if not df_bs.empty:
-                bs_items_map = {
-                    'ar_t0': 'AccountsReceivableNet', 
-                    'inv_t0': 'Inventories', 
-                    'ap_t0': 'AccountsPayable',
-                    'ar_t1': 'AccountsReceivableNet', # Will be handled by lookback
-                    'inv_t1': 'Inventories',          # Will be handled by lookback
-                    'ap_t1': 'AccountsPayable'        # Will be handled by lookback
-                }
-                # Extract T0 (latest)
-                extracted_bs_items_t0 = data_handler.extract_finmind_items(df_bs, bs_items_map, max_lookback_periods=0)
-                # Extract T-1 (one period before latest)
-                if extracted_bs_items_t0.get('report_date'):
-                    latest_report_date_dt = pd.to_datetime(extracted_bs_items_t0['report_date'])
-                    available_dates_in_bs = sorted(pd.to_datetime(df_bs['date'].unique()), reverse=True)
-                    if latest_report_date_dt in available_dates_in_bs:
-                        idx_latest = available_dates_in_bs.index(latest_report_date_dt)
-                        if idx_latest + 1 < len(available_dates_in_bs):
-                            prev_report_date_str = available_dates_in_bs[idx_latest + 1].strftime('%Y-%m-%d')
-                            extracted_bs_items_t1_temp = data_handler.extract_finmind_items(df_bs, bs_items_map, report_date_str=prev_report_date_str, max_lookback_periods=0)
-                            # Rename keys for T-1
-                            for item_key in ['ar_t0', 'inv_t0', 'ap_t0']: # these are the keys in bs_items_map for T0
-                                t1_key = item_key.replace('_t0', '_t1')
-                                financial_data_for_stock[t1_key] = extracted_bs_items_t1_temp.get(item_key) # Use original key to get value
-                            financial_data_for_stock['bs_report_date_t1'] = extracted_bs_items_t1_temp.get('report_date')
-                financial_data_for_stock.update(extracted_bs_items_t0) 
-                # Ensure bs_report_date_t0 is explicitly set from the 'report_date' key of extracted_bs_items_t0
+            freq = self.context.get('financial_data_freq', '季度')
+            # --- 新增：自動回退機制 ---
+            bs_items_map = {
+                'ar_t0': 'AccountsReceivableNet', 
+                'inv_t0': 'Inventories', 
+                'ap_t0': 'AccountsPayable',
+                'ar_t1': 'AccountsReceivableNet', # Will be handled by lookback
+                'inv_t1': 'Inventories',          # Will be handled by lookback
+                'ap_t1': 'AccountsPayable'        # Will be handled by lookback
+            }
+            available_dates_in_bs = sorted(pd.to_datetime(df_bs['date'].unique()), reverse=True) if not df_bs.empty else []
+            report_date_t0 = None
+            report_date_t1 = None
+            extracted_bs_items_t0 = {}
+            extracted_bs_items_t1_temp = None
+            if available_dates_in_bs:
+                # 先嘗試最新一期
+                report_date_t0 = available_dates_in_bs[0].strftime('%Y-%m-%d')
+                extracted_bs_items_t0 = data_handler.extract_finmind_items(df_bs, bs_items_map, report_date_str=report_date_t0, max_lookback_periods=2)
+                # 若主欄位皆為 None，則自動回退一期
+                if all(extracted_bs_items_t0.get(k) is None for k in ['ar_t0', 'inv_t0', 'ap_t0']):
+                    if len(available_dates_in_bs) > 1:
+                        report_date_t0 = available_dates_in_bs[1].strftime('%Y-%m-%d')
+                        extracted_bs_items_t0 = data_handler.extract_finmind_items(df_bs, bs_items_map, report_date_str=report_date_t0, max_lookback_periods=2)
+                # T-1
+                if len(available_dates_in_bs) > 1:
+                    report_date_t1 = available_dates_in_bs[1].strftime('%Y-%m-%d')
+                    extracted_bs_items_t1_temp = data_handler.extract_finmind_items(df_bs, bs_items_map, report_date_str=report_date_t1, max_lookback_periods=2)
+                    # 若主欄位皆為 None，則再回退一期
+                    if all(extracted_bs_items_t1_temp.get(k) is None for k in ['ar_t0', 'inv_t0', 'ap_t0']) and len(available_dates_in_bs) > 2:
+                        report_date_t1 = available_dates_in_bs[2].strftime('%Y-%m-%d')
+                        extracted_bs_items_t1_temp = data_handler.extract_finmind_items(df_bs, bs_items_map, report_date_str=report_date_t1, max_lookback_periods=2)
+            else:
+                extracted_bs_items_t0 = {}
+            if extracted_bs_items_t0:
+                financial_data_for_stock.update(extracted_bs_items_t0)
                 financial_data_for_stock['bs_report_date_t0'] = extracted_bs_items_t0.get('report_date')
-
-                # For T-1, if extracted_bs_items_t1_temp was populated
-                if 'extracted_bs_items_t1_temp' in locals() and extracted_bs_items_t1_temp:
-                     financial_data_for_stock['bs_report_date_t1'] = extracted_bs_items_t1_temp.get('report_date')
-                
+            if extracted_bs_items_t1_temp:
+                for item_key in ['ar_t0', 'inv_t0', 'ap_t0']:
+                    t1_key = item_key.replace('_t0', '_t1')
+                    financial_data_for_stock[t1_key] = extracted_bs_items_t1_temp.get(item_key)
+                financial_data_for_stock['bs_report_date_t1'] = extracted_bs_items_t1_temp.get('report_date')
+            if extracted_bs_items_t0:
                 print(f"    (DataFetchState) 股票 {stock_code} 資產負債表 T0: {financial_data_for_stock.get('bs_report_date_t0')}, T-1: {financial_data_for_stock.get('bs_report_date_t1')}")
-
             else:
                 financial_data_for_stock['error'].append("無法獲取資產負債表")
 
 
             # Fetch Cash Flow Statement (CF)
             df_cf = data_handler.fetch_finmind_financial_statement_data(stock_code, start_date_finmind, 'CashFlowsStatement')
-            if not df_cf.empty:
-                # Add more candidates for capex and depreciation based on common FinMind types
-                cf_items_map = {
-                    'capex': [
-                        'PropertyAndPlantAndEquipment',                 # Found in test_finmind_api.py output
-                        'AcquisitionOfPropertyPlantAndEquipment',       # Primary
-                        'FixedAssetsPurchases',                         # Common alternative
-                        'PurchaseOfPropertyPlantAndEquipment',          # Another alternative
-                        'CashOutflowForAcquisitionOfPropertyPlantAndEquipment', # More descriptive
-                        'IncreaseInPropertyPlantAndEquipment',          # Change in PPE
-                        'AcquisitionOfIntangibleAssetsOtherThanGoodwill', # Intangible assets
-                        'CashOutflowForAcquisitionOfIntangibleAssets'   # Cash outflow for intangibles
-                    ],
-                    'depreciation': [ # This will cover both depreciation and amortization
-                        'DepreciationExpense',                          # Primary for IS, but sometimes in CF
-                        'DepreciationAndAmortizationExpense',           # Common in CF (covers both)
-                        'DepreciationAmortization',                     # Short form (covers both)
-                        'DepreciationAndAmortization',                  # Another common form (covers both)
-                        'Depreciation',                                 # Depreciation only
-                        'Amortization',                                 # Amortization only (if separate)
-                        'PropertyPlantAndEquipmentDepreciation'         # Specific depreciation
-                    ],
-                    'amortization': [ # Keep separate if needed, but usually covered by 'depreciation' list
-                        'AmortizationExpense',
-                        'Amortization'
-                    ]
-                }
-                extracted_cf_items = data_handler.extract_finmind_items(df_cf, cf_items_map, report_date_str=financial_data_for_stock.get('bs_report_date_t0')) # Use BS T0 date as target
+            cf_items_map = {
+                'capex': [
+                    'PropertyAndPlantAndEquipment',                 # Found in test_finmind_api.py output
+                    'AcquisitionOfPropertyPlantAndEquipment',       # Primary
+                    'FixedAssetsPurchases',                         # Common alternative
+                    'PurchaseOfPropertyPlantAndEquipment',          # Another alternative
+                    'CashOutflowForAcquisitionOfPropertyPlantAndEquipment', # More descriptive
+                    'IncreaseInPropertyPlantAndEquipment',          # Change in PPE
+                    'AcquisitionOfIntangibleAssetsOtherThanGoodwill', # Intangible assets
+                    'CashOutflowForAcquisitionOfIntangibleAssets'   # Cash outflow for intangibles
+                ],
+                'depreciation': [ # This will cover both depreciation and amortization
+                    'DepreciationExpense',                          # Primary for IS, but sometimes in CF
+                    'DepreciationAndAmortizationExpense',           # Common in CF (covers both)
+                    'DepreciationAmortization',                     # Short form (covers both)
+                    'DepreciationAndAmortization',                  # Another common form (covers both)
+                    'Depreciation',                                 # Depreciation only
+                    'Amortization',                                 # Amortization only (if separate)
+                    'PropertyPlantAndEquipmentDepreciation'         # Specific depreciation
+                ],
+                'amortization': [ # Keep separate if needed, but usually covered by 'depreciation' list
+                    'AmortizationExpense',
+                    'Amortization'
+                ]
+            }
+            available_dates_in_cf = sorted(pd.to_datetime(df_cf['date'].unique()), reverse=True) if not df_cf.empty else []
+            cf_report_date = financial_data_for_stock.get('bs_report_date_t0')
+            extracted_cf_items = {}
+            if available_dates_in_cf:
+                # 先嘗試與資產負債表同日期
+                if cf_report_date and pd.to_datetime(cf_report_date) in available_dates_in_cf:
+                    extracted_cf_items = data_handler.extract_finmind_items(df_cf, cf_items_map, report_date_str=cf_report_date, max_lookback_periods=2)
+                else:
+                    # 若沒有，則用最新一期
+                    cf_report_date = available_dates_in_cf[0].strftime('%Y-%m-%d')
+                    extracted_cf_items = data_handler.extract_finmind_items(df_cf, cf_items_map, report_date_str=cf_report_date, max_lookback_periods=2)
+                    # 若主欄位皆為 None，則自動回退一期
+                    if all(extracted_cf_items.get(k) is None for k in ['capex', 'depreciation', 'amortization']) and len(available_dates_in_cf) > 1:
+                        cf_report_date = available_dates_in_cf[1].strftime('%Y-%m-%d')
+                        extracted_cf_items = data_handler.extract_finmind_items(df_cf, cf_items_map, report_date_str=cf_report_date, max_lookback_periods=2)
+            if extracted_cf_items:
                 financial_data_for_stock.update(extracted_cf_items)
                 financial_data_for_stock['cf_report_date'] = extracted_cf_items.get('report_date')
             else:
@@ -285,9 +330,23 @@ class DataFetchState(State):
 
             # Fetch Income Statement (IS) - FinancialStatements in FinMind
             df_is = data_handler.fetch_finmind_financial_statement_data(stock_code, start_date_finmind, 'FinancialStatements')
-            if not df_is.empty:
-                is_items_map = {'net_income_parent': 'EquityAttributableToOwnersOfParent', 'eps_finmind': 'EPS'} # 'revenue' can also be added if needed
-                extracted_is_items = data_handler.extract_finmind_items(df_is, is_items_map, report_date_str=financial_data_for_stock.get('bs_report_date_t0')) # Use BS T0 date as target
+            is_items_map = {'net_income_parent': 'EquityAttributableToOwnersOfParent', 'eps_finmind': 'EPS'}
+            available_dates_in_is = sorted(pd.to_datetime(df_is['date'].unique()), reverse=True) if not df_is.empty else []
+            is_report_date = financial_data_for_stock.get('bs_report_date_t0')
+            extracted_is_items = {}
+            if available_dates_in_is:
+                # 先嘗試與資產負債表同日期
+                if is_report_date and pd.to_datetime(is_report_date) in available_dates_in_is:
+                    extracted_is_items = data_handler.extract_finmind_items(df_is, is_items_map, report_date_str=is_report_date, max_lookback_periods=2)
+                else:
+                    # 若沒有，則用最新一期
+                    is_report_date = available_dates_in_is[0].strftime('%Y-%m-%d')
+                    extracted_is_items = data_handler.extract_finmind_items(df_is, is_items_map, report_date_str=is_report_date, max_lookback_periods=2)
+                    # 若主欄位皆為 None，則自動回退一期
+                    if all(extracted_is_items.get(k) is None for k in ['net_income_parent', 'eps_finmind']) and len(available_dates_in_is) > 1:
+                        is_report_date = available_dates_in_is[1].strftime('%Y-%m-%d')
+                        extracted_is_items = data_handler.extract_finmind_items(df_is, is_items_map, report_date_str=is_report_date, max_lookback_periods=2)
+            if extracted_is_items:
                 financial_data_for_stock.update(extracted_is_items)
                 financial_data_for_stock['is_report_date'] = extracted_is_items.get('report_date')
             else:
@@ -299,12 +358,46 @@ class DataFetchState(State):
             price_target_date = financial_data_for_stock.get('is_report_date') or \
                                 financial_data_for_stock.get('cf_report_date') or \
                                 financial_data_for_stock.get('bs_report_date_t0')
-                                
             current_price = data_handler.fetch_finmind_stock_price(stock_code, target_date_str=price_target_date)
-            
             financial_data_for_stock['current_market_price'] = current_price
             if current_price is None:
-                 financial_data_for_stock['error'].append(f"無法從FinMind獲取股票 {stock_code} 的目前股價 (目標日期: {price_target_date})")
+                financial_data_for_stock['error'].append(f"無法從FinMind獲取股票 {stock_code} 的目前股價 (目標日期: {price_target_date})")
+
+            # --- shares_outstanding 自動補全 ---
+            if not financial_data_for_stock.get("shares_outstanding"):
+                # 1. 先從 stock_detail 補
+                so = stock_detail.get("shares_outstanding")
+                if so:
+                    financial_data_for_stock["shares_outstanding"] = so
+                else:
+                    # 2. 嘗試對齊財報期末自動下載/解析證交所股本異動表
+                    try:
+                        import data_fetching
+                        # 優先用資產負債表 T0 日期
+                        report_date = financial_data_for_stock.get('bs_report_date_t0') or \
+                                      financial_data_for_stock.get('is_report_date') or \
+                                      financial_data_for_stock.get('cf_report_date')
+                        so_csv = None
+                        if report_date:
+                            so_csv = data_fetching.get_shares_outstanding_from_twse_csv(stock_code, report_date)
+                        if so_csv:
+                            financial_data_for_stock["shares_outstanding"] = so_csv
+                        else:
+                            # 3. 再從 all_companies_openapi_data 補
+                            all_companies = self.context.get("all_companies_openapi_data", [])
+                            so_found = None
+                            for comp in all_companies:
+                                if str(comp.get("公司代號")) == str(stock_code):
+                                    so_str = comp.get("已發行普通股數或TDR原股發行股數")
+                                    try:
+                                        so_found = float(str(so_str).replace(",", ""))
+                                    except Exception:
+                                        so_found = None
+                                    break
+                            if so_found:
+                                financial_data_for_stock["shares_outstanding"] = so_found
+                    except Exception as e:
+                        print(f"[jojo_state_machine] shares_outstanding 多來源補全失敗: {e}")
 
             # Consolidate errors
             if financial_data_for_stock['error']:
@@ -313,10 +406,6 @@ class DataFetchState(State):
                 del financial_data_for_stock['error'] # Remove if no errors
 
             all_financial_data_for_stock[stock_code] = financial_data_for_stock
-            # DEBUG print for the first few stocks
-            # if len(all_financial_data_for_stock) < 4:
-            #    print(f"    (DataFetchState) [DEBUG] Stock {stock_code} - Final financial_data_for_stock: NI={financial_data_for_stock.get('net_income_parent')}, SourceField={financial_data_for_stock.get('net_income_parent_source_field')}")
-            
             processed_count += 1
 
         self.context['processed_data'] = all_financial_data_for_stock
@@ -359,7 +448,9 @@ class FilteringState(State):
     def execute(self):
         print("Executing FilteringState: 篩選估值後的股票...")
         results = self.context.get('valuation_results', [])
-        threshold = self.context.get('potential_return_threshold', 0.15) # Default 15%
+        threshold = self.context.get('potential_return_threshold')
+        if threshold is None:
+            threshold = 0.15 # Default 15%
         min_eps = self.context.get('min_eps_threshold', 0.01) # Default minimum EPS > 0
 
         print(f"  (FilteringState) 收到 {len(results)} 筆估值結果準備篩選。篩選潛在報酬 > {threshold*100:.1f}%")
@@ -423,6 +514,49 @@ class ResultsDisplayState(State):
         # until a UI action (e.g., "New Query" button) triggers a transition.
         # No automatic transition from here.
         print("ResultsDisplayState 完成。 (等待UI操作)")
+
+import os
+from datetime import datetime
+
+class ExportState(State):
+    def execute(self):
+        print("Executing ExportState: 匯出結果（CSV/Excel）...")
+        results = self.context.get('filtered_results', [])
+        if not results:
+            print("  (ExportState) 無可匯出的結果。")
+            self.context['export_file_path'] = None
+            self.context['export_file_type'] = None
+            self.machine.transition_to(JoJoState.RESULTS_DISPLAY)
+            print("ExportState 完成。")
+            return
+
+        df = pd.DataFrame(results)
+        export_dir = "export"
+        os.makedirs(export_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        csv_path = os.path.join(export_dir, f"jojo_export_{timestamp}.csv")
+        excel_path = os.path.join(export_dir, f"jojo_export_{timestamp}.xlsx")
+
+        try:
+            df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+            print(f"  (ExportState) 已匯出 CSV 檔案：{csv_path}")
+            self.context['export_file_path'] = csv_path
+            self.context['export_file_type'] = "csv"
+        except Exception as e:
+            print(f"  (ExportState) 匯出 CSV 失敗: {e}")
+            self.context['export_file_path'] = None
+            self.context['export_file_type'] = None
+
+        try:
+            df.to_excel(excel_path, index=False)
+            print(f"  (ExportState) 已匯出 Excel 檔案：{excel_path}")
+            self.context['export_file_path_excel'] = excel_path
+        except Exception as e:
+            print(f"  (ExportState) 匯出 Excel 失敗: {e}")
+            self.context['export_file_path_excel'] = None
+
+        self.machine.transition_to(JoJoState.RESULTS_DISPLAY)
+        print("ExportState 完成。")
 
 class ErrorState(State):
     def execute(self):
