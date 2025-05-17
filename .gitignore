@@ -30,3 +30,15 @@ shioaji.log
 *~
 .DS_Store
 Thumbs.db
+
+# Cache files
+cache/
+
+# Trae files
+.trae/
+
+# Log files
+logs/
+
+# Export files
+export/
