@@ -69,6 +69,11 @@ from FinMind.data import DataLoader
 import time # For cache freshness
 from pathlib import Path # For creating cache directory
 
+# Import new modules for Phase 1 optimization
+from modules.data_validator import FinancialDataValidator
+from modules.enhanced_dcf import EnhancedDCFModel
+from modules.integrated_dcf_handler import calculate_enhanced_dcf_valuation
+
 load_dotenv()
 
 # Get the directory of the current script
@@ -88,9 +93,16 @@ try:
 except Exception as e_mkdir:
     print(f"  (data_handler) ERROR: Could not create cache directory at {CACHE_DIR}: {e_mkdir}")
 
+# Initialize new modules for Phase 1 optimization
+financial_validator = FinancialDataValidator()
+enhanced_dcf_model = EnhancedDCFModel()
+print("  (data_handler) Initialized financial data validator and enhanced DCF model")
+
+# DCF calculation method selector
+USE_ENHANCED_DCF = True  # Set to False to use original DCF implementation
 
 finmind_api = DataLoader() 
-login_method_used = "anonymous_default" 
+login_method_used = "anonymous_default"
 
 try:
     if FINMIND_USER_ID and FINMIND_PASSWORD:
@@ -927,6 +939,153 @@ def _calculate_historical_fcf_eps_core(stock_code, df_is, df_cf, df_bs, periods)
     }
 
 def calculate_dcf_valuation(stock_code, financials, risk_preference, context):
+    """
+    Main DCF valuation function with option to use enhanced or original implementation
+    """
+    if USE_ENHANCED_DCF:
+        # Use enhanced DCF with validation and advanced features
+        print(f"  (data_handler) 使用增強版 DCF 進行估值...")
+        return calculate_enhanced_dcf_valuation(stock_code, financials, risk_preference, context)
+    else:
+        # Use original DCF implementation
+        print(f"  (data_handler) 使用原始版 DCF 進行估值...")
+        return calculate_original_dcf_valuation(stock_code, financials, risk_preference, context)
+
+def calculate_original_dcf_valuation(stock_code, financials, risk_preference, context):
+    """
+    Enhanced DCF valuation with integrated data validation and advanced features
+    """
+    print(f"  (data_handler) 開始為股票 {stock_code} 進行增強版 DCF 估值...")
+    
+    # Phase 1: Data Validation
+    print(f"  (data_handler) 🔍 Phase 1: 執行財務數據品質驗證...")
+    validation_result = financial_validator.validate_dcf_inputs(financials, stock_code)
+    
+    # Log validation results
+    print(f"    (data_handler) 驗證品質分數: {validation_result.overall_quality_score:.1f}/100")
+    print(f"    (data_handler) 錯誤數量: {validation_result.error_count}, 警告數量: {validation_result.warning_count}")
+    
+    # Check for critical errors that would prevent DCF calculation
+    critical_errors = [issue for issue in validation_result.issues if issue.level == 'ERROR']
+    if critical_errors:
+        error_messages = [f"{issue.field}: {issue.message}" for issue in critical_errors]
+        print(f"    (data_handler) ❌ 嚴重錯誤阻止 DCF 計算: {'; '.join(error_messages)}")
+        return {
+            "stock_code": stock_code,
+            "error": f"數據驗證失敗: {'; '.join(error_messages)}",
+            "validation_score": validation_result.overall_quality_score,
+            "data_quality": "POOR"
+        }
+    
+    # Continue with enhanced DCF if validation passes
+    if validation_result.overall_quality_score >= 60:  # Minimum quality threshold
+        print(f"  (data_handler) 🚀 Phase 2: 執行增強版 DCF 估值計算...")
+        
+        # Prepare enhanced DCF inputs
+        enhanced_inputs = {
+            'stock_code': stock_code,
+            'net_income': financials.get("net_income_parent"),
+            'shares_outstanding': financials.get("shares_outstanding"),
+            'capex': financials.get("capex"),
+            'depreciation': financials.get("depreciation", 0) + financials.get("amortization", 0),
+            'working_capital_change': calculate_working_capital_change(financials),
+            'current_market_price': financials.get("current_market_price"),
+            'risk_free_rate': context.get('risk_free_rate', 0.01),
+            'market_premium': context.get('market_premium', 0.06),
+            'beta': context.get('beta', 1.0),  # Default beta if not provided
+            'growth_rate_short': context.get('dcf_short_term_growth_rate', 0.07),
+            'growth_rate_terminal': context.get('dcf_terminal_growth_rate', 0.025),
+            'projection_years': context.get('dcf_projection_years', 5)
+        }
+        
+        # Execute enhanced DCF with scenario analysis
+        dcf_result = enhanced_dcf_model.calculate_dcf_with_scenarios(enhanced_inputs)
+        
+        # Add validation metrics to result
+        dcf_result.update({
+            'validation_score': validation_result.overall_quality_score,
+            'data_quality': get_quality_rating(validation_result.overall_quality_score),
+            'validation_warnings': [issue.message for issue in validation_result.issues if issue.level == 'WARNING']
+        })
+        
+        print(f"    (data_handler) ✅ 增強版 DCF 完成，內在價值: {dcf_result.get('intrinsic_value_per_share', 'N/A')}")
+        return dcf_result
+    
+    else:
+        # Fall back to standard DCF if quality is moderate
+        print(f"  (data_handler) ⚠️ 數據品質中等({validation_result.overall_quality_score:.1f})，使用標準 DCF...")
+        return calculate_standard_dcf_valuation(stock_code, financials, risk_preference, context, validation_result)
+
+def calculate_working_capital_change(financials):
+    """Calculate working capital change for DCF"""
+    ar_t0 = financials.get('ar_t0', 0) or 0
+    inv_t0 = financials.get('inv_t0', 0) or 0
+    ap_t0 = financials.get('ap_t0', 0) or 0
+    ar_t1 = financials.get('ar_t1', 0) or 0
+    inv_t1 = financials.get('inv_t1', 0) or 0
+    ap_t1 = financials.get('ap_t1', 0) or 0
+    
+    wc_t0 = ar_t0 + inv_t0 - ap_t0
+    wc_t1 = ar_t1 + inv_t1 - ap_t1
+    
+    return wc_t0 - wc_t1
+
+def get_quality_rating(score):
+    """Convert quality score to rating"""
+    if score >= 85:
+        return "EXCELLENT"
+    elif score >= 70:
+        return "GOOD"
+    elif score >= 55:
+        return "FAIR"
+    else:
+        return "POOR"
+
+def calculate_standard_dcf_valuation(stock_code, financials, risk_preference, context, validation_result=None):
+    """
+    Standard DCF calculation (original implementation) with validation integration
+    """
+    print(f"  (data_handler) 開始為股票 {stock_code} 進行標準 DCF 估值 (使用 FinMind 數據基礎)...")
+    # print(f"    (data_handler) [DEBUG] Financials for {stock_code} in DCF: {financials}") # DEBUG Line
+
+    if financials.get("error"):
+        error_message = financials['error']
+        if isinstance(error_message, str) and any(msg.strip().startswith("無法獲取") for msg in error_message.split(';') if msg.strip()): 
+             print(f"    (data_handler) 股票 {stock_code} 因 FinMind 資料獲取不完整 ({error_message.strip()})，無法進行精確 FCFE 估值。")
+             return {"stock_code": stock_code, "error": f"FinMind 資料不完整: {error_message.strip()}", 
+                     "source_eps": financials.get("eps_finmind"), "current_market_price": financials.get("current_market_price")}
+        elif isinstance(error_message, str) and error_message.strip(): 
+            print(f"    (data_handler) 股票 {stock_code} 缺少財務數據，無法估值: {error_message}")
+            return {"stock_code": stock_code, "error": f"Missing financial data: {error_message}",
+                     "source_eps": financials.get("eps_finmind"), "current_market_price": financials.get("current_market_price")}
+      # === 增強的一次性收益檢測機制 ===
+    enable_anomaly_detection = context.get('enable_anomaly_detection', True)
+    anomaly_threshold = context.get('anomaly_threshold', 1.5)  # FCF_EPS超過歷史平均1.5倍視為異常
+    
+    if enable_anomaly_detection:
+        print(f"  (data_handler) 🔍 開始智能檢測股票 {stock_code} 是否存在一次性收益異常...")
+        
+        # 先快速計算當期FCF_EPS用於比較
+        net_income_to_parent = financials.get("net_income_parent")
+        shares_outstanding = financials.get("shares_outstanding")
+        
+        if net_income_to_parent is not None and shares_outstanding is not None and shares_outstanding > 0:
+            # 簡化計算當期FCF_EPS（基於淨利潤）
+            current_fcf_eps_simple = net_income_to_parent / shares_outstanding
+            
+            # 計算歷史FCF_EPS統計資料
+            stock_detail = context.get('stock_details', {}).get(stock_code, {})
+            historical_result = calculate_historical_fcf_eps(stock_code, stock_detail, context, periods=4)
+            
+            if not historical_result.get("error") and historical_result.get("periods_count", 0) >= 2:
+                avg_historical_fcf_eps = historical_result.get("avg_fcf_eps", 0)
+                max_historical_fcf_eps = historical_result.get("max_fcf_eps", 0)
+                min_historical_fcf_eps = historical_result.get("min_fcf_eps", 0)
+                periods_count = historical_result.get("periods_count")
+                
+                # 改進的異常檢測邏輯
+                anomaly_detected = False
+                anomaly_reason = ""
     print(f"  (data_handler) 開始為股票 {stock_code} 進行 DCF 估值 (使用 FinMind 數據基礎)...")
     # print(f"    (data_handler) [DEBUG] Financials for {stock_code} in DCF: {financials}") # DEBUG Line
 

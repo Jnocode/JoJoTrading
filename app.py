@@ -66,6 +66,7 @@ VALUATION → FILTERING → RESULTS_DISPLAY → EXPORT
 # app.py (Streamlit 主應用程式檔案)
 import streamlit as st
 import pandas as pd # Import pandas
+import data_handler  # Import data_handler for enhanced DCF settings
 from jojo_state_machine import JoJoStateMachine, JoJoState, State # 確保 State 也導入了 (原 BaseState)
 from modules.i18n import t
 from modules.growth_analyzer import DEFAULT_CRITERIA, evaluate_growth_potential, GrowthCriterion
@@ -249,18 +250,108 @@ anomaly_threshold_ui = st.sidebar.slider(
     max_value=3.0,
     value=machine.context.get('anomaly_threshold', 1.5),
     step=0.1,
-    help="當期FCF_EPS超過歷史平均的倍數視為異常。例如1.5表示超過1.5倍視為異常",
-    disabled=not enable_anomaly_detection_ui
+    help="當期FCF_EPS超過歷史平均多少倍時視為異常"
 )
 
-# 同步到狀態機 context
-if (enable_anomaly_detection_ui != machine.context.get('enable_anomaly_detection', True) or 
-    abs(anomaly_threshold_ui - machine.context.get('anomaly_threshold', 1.5)) > 0.05):
+# === Phase 1 Enhancement Controls ===
+st.sidebar.subheader("🚀 Phase 1 增強功能")
+
+# Enhanced DCF toggle
+use_enhanced_dcf_ui = st.sidebar.checkbox(
+    "使用增強版 DCF 估值",
+    value=machine.context.get('use_enhanced_dcf', True),
+    help="啟用數據驗證、情境分析和動態折現率的增強 DCF 模型"
+)
+
+# Data validation toggle
+enable_data_validation_ui = st.sidebar.checkbox(
+    "啟用數據品質驗證",
+    value=machine.context.get('enable_data_validation', True),
+    help="執行財務數據完整性和一致性檢查"
+)
+
+# Minimum data quality score
+min_data_quality_score_ui = st.sidebar.slider(
+    "最低數據品質分數",
+    min_value=40,
+    max_value=90,
+    value=machine.context.get('min_data_quality_score', 60),
+    step=5,
+    help="低於此分數的股票將使用標準 DCF 或跳過"
+)
+
+# Scenario analysis toggle
+enable_scenario_analysis_ui = st.sidebar.checkbox(
+    "啟用情境分析",
+    value=machine.context.get('enable_scenario_analysis', True),
+    help="計算樂觀、基準和保守三種情境的估值"
+)
+
+# Monte Carlo simulation toggle
+enable_monte_carlo_ui = st.sidebar.checkbox(
+    "啟用蒙地卡羅模擬",
+    value=machine.context.get('enable_monte_carlo', False),
+    help="使用蒙地卡羅模擬量化估值不確定性 (較耗時)"
+)
+
+# Monte Carlo iterations (only show if Monte Carlo is enabled)
+if enable_monte_carlo_ui:
+    monte_carlo_iterations_ui = st.sidebar.slider(
+        "蒙地卡羅模擬次數",
+        min_value=100,
+        max_value=5000,
+        value=machine.context.get('monte_carlo_iterations', 1000),
+        step=100,
+        help="更多次數提供更精確結果但需要更長時間"
+    )
+else:
+    monte_carlo_iterations_ui = machine.context.get('monte_carlo_iterations', 1000)
+
+# Update context if any settings changed
+settings_changed = False
+if enable_anomaly_detection_ui != machine.context.get('enable_anomaly_detection'):
     machine.context['enable_anomaly_detection'] = enable_anomaly_detection_ui
+    settings_changed = True
+
+if anomaly_threshold_ui != machine.context.get('anomaly_threshold'):
     machine.context['anomaly_threshold'] = anomaly_threshold_ui
-    print(f"異常檢測設定已更新: 啟用={enable_anomaly_detection_ui}, 閾值={anomaly_threshold_ui}x")
+    settings_changed = True
+
+if use_enhanced_dcf_ui != machine.context.get('use_enhanced_dcf'):
+    machine.context['use_enhanced_dcf'] = use_enhanced_dcf_ui
+    data_handler.USE_ENHANCED_DCF = use_enhanced_dcf_ui  # Update data_handler setting
+    settings_changed = True
+    print(f"DCF 方法切換為: {'增強版' if use_enhanced_dcf_ui else '原始版'}")
+
+if enable_data_validation_ui != machine.context.get('enable_data_validation'):
+    machine.context['enable_data_validation'] = enable_data_validation_ui
+    settings_changed = True
+
+if min_data_quality_score_ui != machine.context.get('min_data_quality_score'):
+    machine.context['min_data_quality_score'] = min_data_quality_score_ui
+    settings_changed = True
+
+if enable_scenario_analysis_ui != machine.context.get('enable_scenario_analysis'):
+    machine.context['enable_scenario_analysis'] = enable_scenario_analysis_ui
+    settings_changed = True
+
+if enable_monte_carlo_ui != machine.context.get('enable_monte_carlo'):
+    machine.context['enable_monte_carlo'] = enable_monte_carlo_ui
+    settings_changed = True
+
+if monte_carlo_iterations_ui != machine.context.get('monte_carlo_iterations'):
+    machine.context['monte_carlo_iterations'] = monte_carlo_iterations_ui
+    settings_changed = True
+
+if settings_changed:
+    print("設定已更新，將在下次計算時生效")
 
 # 顯示當前設定狀態
+if machine.context.get('use_enhanced_dcf', True):
+    st.sidebar.success("🚀 增強版 DCF 已啟用")
+else:
+    st.sidebar.info("📊 使用標準版 DCF")
+
 if enable_anomaly_detection_ui:
     st.sidebar.success(f"🛡️ 智能異常檢測已啟用\n📊 檢測閾值: {anomaly_threshold_ui}x 歷史平均\n🎯 檢測模式: 多層檢測算法")
 else:
