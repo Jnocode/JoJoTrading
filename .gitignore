@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.nox/
+.hypothesis/
+*.egg-info/
+*.egg
+
+# Environment variables
+.env
+
+# Data files
+all_companies_basic_data.json
+shioaji.log
+
+# IDE / System files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Cache files
+cache/
+
+# Trae files
+.trae/
+
+# Log files
+logs/
+
+# Export files
+export/
