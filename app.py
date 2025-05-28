@@ -1,8 +1,74 @@
+"""
+JoJotrading Streamlit 主應用程式
+
+這是基於 DCF 估值模型的台股篩選系統的主要使用者介面，
+採用 Streamlit 框架建立互動式 Web 應用程式。
+
+系統架構：
+- 狀態機驅動的應用程式流程控制
+- 多語言支援 (中文/英文)
+- 響應式 Web 介面設計
+- 即時資料處理與結果展示
+
+主要功能模組：
+
+1. 使用者介面控制
+   - drive_state_machine(): 狀態機流程驅動器
+   - render_ui(): 主要介面渲染邏輯
+   - 側邊欄參數設定與控制面板
+
+2. 產業與股票選擇
+   - 支援產業分類篩選
+   - 個股代碼直接輸入
+   - 動態股票清單管理
+
+3. DCF 估值參數設定
+   - 無風險利率與風險溢價調整
+   - 終端成長率設定
+   - 估值方法選擇 (FCF/EPS)
+
+4. 成長股篩選條件
+   - 營收 CAGR 篩選
+   - EPS CAGR 篩選  
+   - ROE 表現評估
+   - 可自訂閾值與評估期間
+
+5. 結果展示與匯出
+   - 動態篩選結果表格
+   - 詳細估值指標展示
+   - Excel 匯出功能
+   - 成長股評估詳情
+
+狀態流程：
+CONFIG_LOAD → UI_INIT → INDUSTRY_PROCESS → DATA_FETCH → 
+VALUATION → FILTERING → RESULTS_DISPLAY → EXPORT
+
+技術特色：
+- 狀態機模式確保流程的穩定性與可維護性
+- 即時快取機制減少 API 呼叫延遲
+- 響應式設計支援多種螢幕尺寸
+- 異常檢測機制提升估值準確度
+
+使用方式：
+1. 選擇產業或輸入個股代碼
+2. 調整 DCF 估值參數
+3. 設定成長股篩選條件
+4. 執行分析並查看結果
+5. 匯出詳細報告
+
+環境需求：
+- Python 3.8+
+- Streamlit 1.28+
+- 有效的 FinMind API 憑證
+- 穩定的網路連線以存取即時股價
+"""
+
 # app.py (Streamlit 主應用程式檔案)
 import streamlit as st
 import pandas as pd # Import pandas
 from jojo_state_machine import JoJoStateMachine, JoJoState, State # 確保 State 也導入了 (原 BaseState)
 from modules.i18n import t
+from modules.growth_analyzer import DEFAULT_CRITERIA, evaluate_growth_potential, GrowthCriterion
 
 # --- Helper function to drive state machine ---
 def drive_state_machine(machine, target_state=None):
@@ -36,7 +102,7 @@ def drive_state_machine(machine, target_state=None):
         # machine.execute_state() # 讓狀態機自己執行當前狀態
         # 為了保持 drive_state_machine 的現有結構，我們假設它仍然需要知道下一個狀態
         # 但這與 JoJoStateMachine 的 transition_to 和 execute_state 的耦合較高
-        # 這裡的 next_state_enum 應該由 machine.execute_state() 返回或通過某種方式獲取
+        # 這裡的 next_state_enum 應該由 machine.execute_state() 返回或通過某种方式獲取
         # 假設 JoJoStateMachine 的 execute_state 返回下一個狀態（如果有的話）
         
         # 簡化：drive_state_machine 的目的是觸發一次狀態執行，狀態轉換由狀態機內部處理
@@ -110,10 +176,10 @@ def drive_state_machine(machine, target_state=None):
 
 # --- Streamlit App ---
 
-print("--- app.py script execution START ---") # DEBUG PRINT
+# --- Streamlit App ---
+
 # 1. 初始化狀態機和開發者模式 (僅在第一次執行或 session state 遺失時)
 if 'jojo_machine' not in st.session_state:
-    print(">>> 'jojo_machine' NOT in st.session_state. Initializing...") # DEBUG PRINT
     st.session_state.jojo_machine = JoJoStateMachine()
     # 預設開發者模式為 False (從 UI 控制)
     st.session_state.developer_mode_active = False 
@@ -121,18 +187,16 @@ if 'jojo_machine' not in st.session_state:
     machine_init = st.session_state.jojo_machine
     # 將 UI 的開發者模式狀態同步到狀態機 context
     machine_init.context['developer_mode'] = st.session_state.developer_mode_active
-    
-    # JoJoStateMachine.__init__ 內部已經調用了 self.execute_state()，
+      # JoJoStateMachine.__init__ 內部已經調用了 self.execute_state()，
     # 這會將狀態從 CONFIG_LOAD 推進到 UI_INIT。
     # 因此，這裡不再需要額外調用 machine_init.execute_state()。
     # 我們只需要確認初始化後的狀態。
-    print(f"JoJoStateMachine 初始化完成後 (from app.py IF block)，狀態為: {machine_init.current_state}")
+    
 else:
-    print(">>> 'jojo_machine' IS ALREADY in st.session_state.") # DEBUG PRINT
+    pass
 
 # 從 session_state 獲取狀態機實例
 machine = st.session_state.jojo_machine
-print(f"--- Current machine state (retrieved from session_state): {machine.current_state} ---") # DEBUG PRINT
 
 # --- UI 側邊欄：語言切換與開發者模式切換 ---
 # 語言切換
@@ -311,9 +375,7 @@ if machine.current_state == JoJoState.UI_INIT: # 使用 machine.current_state
     elif risk_options_dict and selected_risk_label_from_ui in risk_options_dict: 
          actual_risk_preference = risk_options_dict[selected_risk_label_from_ui]
     else: # Fallback if selected_risk_label_from_ui is not in dict (e.g. "N/A" or other issues)
-        actual_risk_preference = machine.context.get('default_risk_premium', 0.04)
-
-    # 新增：最小潛在報酬率篩選輸入（僅產業篩選模式顯示）
+        actual_risk_preference = machine.context.get('default_risk_premium', 0.04)    # 新增：最小潛在報酬率篩選輸入（僅產業篩選模式顯示）
     min_potential_return_percentage = None
     if mode == "產業篩選模式":
         min_potential_return_percentage = st.number_input(
@@ -324,6 +386,81 @@ if machine.current_state == JoJoState.UI_INIT: # 使用 machine.current_state
             step=1.0,
             help="設定篩選股票時，期望的最低潛在報酬率。例如輸入 20 表示至少 20%。"
         )
+
+    # 新增：成長股判定設定
+    st.subheader("🚀 成長股判定設定")
+    
+    enable_growth_filter = st.checkbox(
+        "啟用成長股過濾 (僅對成長股進行DCF估值)",
+        value=machine.context.get('enable_growth_filter', True),
+        help="開啟後，系統將先判定成長股，再進行DCF估值"
+    )
+    
+    if enable_growth_filter:
+        st.write("**成長股判定條件：**")
+        
+        # 營收CAGR條件
+        revenue_cagr_enabled = st.checkbox(
+            "近3年營收CAGR",
+            value=machine.context.get('revenue_cagr_enabled', True)
+        )
+        revenue_cagr_threshold = 15.0
+        if revenue_cagr_enabled:
+            revenue_cagr_threshold = st.number_input(
+                "營收CAGR閾值 (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=machine.context.get('revenue_cagr_threshold', 15.0),
+                step=1.0
+            )
+        
+        # EPS CAGR條件
+        eps_cagr_enabled = st.checkbox(
+            "近3年EPS CAGR",
+            value=machine.context.get('eps_cagr_enabled', True)
+        )
+        eps_cagr_threshold = 15.0
+        if eps_cagr_enabled:
+            eps_cagr_threshold = st.number_input(
+                "EPS CAGR閾值 (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=machine.context.get('eps_cagr_threshold', 15.0),
+                step=1.0
+            )
+        
+        # ROE條件
+        roe_enabled = st.checkbox(
+            "最新ROE",
+            value=machine.context.get('roe_enabled', True)
+        )
+        roe_threshold = 15.0
+        if roe_enabled:
+            roe_threshold = st.number_input(
+                "ROE閾值 (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=machine.context.get('roe_threshold', 15.0),
+                step=1.0
+            )
+        
+        # 邏輯運算符
+        growth_logic_operator = st.radio(
+            "條件組合邏輯：",
+            options=["AND (所有條件都要符合)", "OR (任一條件符合即可)"],
+            index=0 if machine.context.get('growth_logic_operator', 'AND') == 'AND' else 1,
+            horizontal=True
+        )
+        
+        # 保存成長股設定到context
+        machine.context['enable_growth_filter'] = enable_growth_filter
+        machine.context['revenue_cagr_enabled'] = revenue_cagr_enabled
+        machine.context['revenue_cagr_threshold'] = revenue_cagr_threshold
+        machine.context['eps_cagr_enabled'] = eps_cagr_enabled
+        machine.context['eps_cagr_threshold'] = eps_cagr_threshold
+        machine.context['roe_enabled'] = roe_enabled
+        machine.context['roe_threshold'] = roe_threshold
+        machine.context['growth_logic_operator'] = 'AND' if 'AND' in growth_logic_operator else 'OR'
 
     if st.button("開始篩選股票"):
         machine.context['selected_industry_name'] = selected_industry_name_from_ui 

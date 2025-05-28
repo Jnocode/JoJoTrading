@@ -1,3 +1,65 @@
+"""
+JoJotrading 資料處理核心模組
+
+此模組負責台股篩選系統的所有資料獲取、處理和整合功能，
+結合多個資料來源提供完整的股票財務資訊和估值計算支援。
+
+主要資料來源：
+- FinMind API: 財務報表、每日股價、基本面數據
+- 台灣證券交易所 OpenAPI: 上市公司基本資料、即時股價
+- 本地快取系統: 優化 API 呼叫效率
+
+核心功能：
+1. 財務資料獲取與快取管理
+   - get_financial_data_cached(): 取得快取財務數據
+   - fetch_and_cache_financial_data(): 獲取並快取 FinMind 數據
+   - get_all_companies_basic_data(): 獲取上市公司基本資料
+
+2. 產業分類與股票篩選
+   - filter_industry_stocks(): 根據產業代碼篩選股票
+   - 支援個股直查模式與產業群組篩選
+
+3. DCF 估值計算
+   - calculate_dcf_valuation(): 現金流量折現估值模型
+   - 支援自由現金流與盈餘現金流兩種模式
+   - 包含一次性收益異常檢測功能
+
+4. 資料清洗與驗證
+   - 財務數據完整性檢查
+   - 異常值檢測與處理
+   - 多年期財務趨勢分析
+
+快取機制：
+- 24小時快取期限，減少 API 重複呼叫
+- 自動建立與管理 cache/finmind_data 目錄
+- 支援快取失效與強制更新
+
+環境變數配置：
+- FINMIND_API_TOKEN: FinMind API 認證令牌
+- FINMIND_USER_ID: FinMind 用戶 ID
+- FINMIND_PASSWORD: FinMind 密碼
+
+使用範例：
+    # 獲取財務數據
+    financial_data = get_financial_data_cached(stock_code="2330", dataset="TaiwanStockFinancialStatements")
+    
+    # 計算 DCF 估值
+    valuation = calculate_dcf_valuation(
+        stock_code="2330",
+        financial_data=financial_data,
+        risk_free_rate=0.01,
+        risk_premium=0.06
+    )
+    
+    # 產業股票篩選
+    stocks = filter_industry_stocks("半導體業", industry_code_map, all_companies_data)
+
+注意事項：
+- 需要有效的 FinMind API 憑證才能存取完整數據
+- 建議設定適當的 API 呼叫間隔以避免限制
+- DCF 模型假設適用於穩定成長的企業
+"""
+
 import json
 import os
 import requests

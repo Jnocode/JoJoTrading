@@ -1,9 +1,36 @@
+"""
+JoJotrading 狀態機核心模組
+
+此模組實現了基於 DCF 估值的台股篩選系統的狀態機架構，
+通過不同狀態的轉換來完成完整的股票篩選和估值流程。
+
+狀態轉換流程：
+CONFIG_LOAD -> UI_INIT -> INDUSTRY_PROCESS -> DATA_FETCH -> VALUATION -> FILTERING -> RESULTS_DISPLAY
+
+主要類別：
+- JoJoState: 定義所有系統狀態的枚舉
+- State: 狀態基礎類別，提供狀態執行的統一介面
+- JoJoStateMachine: 狀態機管理器，控制狀態轉換和執行
+- 各種狀態類別: ConfigLoadState, UIInitState, IndustryProcessState 等
+
+每個狀態負責特定的業務邏輯：
+- 產業資料處理、財務資料獲取、DCF 估值計算
+- 成長股篩選、異常檢測、結果展示等
+
+系統特色：
+- 支援多語介面 (中文/英文)
+- 整合成長股判定邏輯
+- 具備異常檢測機制
+- 可匯出 Excel 報告
+"""
+
 import streamlit as st
 import pandas as pd
 from enum import Enum, auto
 import data_handler # Import the refactored data_handler
 import json # For loading industries.json
 import requests # Added to resolve NameError
+from modules.growth_analyzer import evaluate_growth_potential, GrowthCriterion
 
 class JoJoState(Enum):
     CONFIG_LOAD = auto()
@@ -422,20 +449,17 @@ class ValuationState(State):
         print("Executing ValuationState: 進行 DCF 估值...")
         valuation_results = []
         risk_preference = self.context.get('risk_preference', 0.10) # Default if not set
-
+        
         for stock_code, financials in self.context.get('processed_data', {}).items():
-            # DEBUG: Print the financials dictionary being passed to DCF
-            # print(f"  (ValuationState) [DEBUG] Valuating {stock_code}, Data before DCF: {financials}")
-            
             # Check if essential data was fetched successfully before attempting valuation
             if financials.get("error") and "無法獲取" in financials.get("error"): # Check for specific fetch errors
-                 print(f"  (ValuationState) 股票 {stock_code} ({financials.get('name', '')}) 缺少有效的財務數據，跳過估值。錯誤: {financials.get('error')}")
-                 valuation_results.append({
+                print(f"  (ValuationState) 股票 {stock_code} ({financials.get('name', '')}) 缺少有效的財務數據，跳過估值。錯誤: {financials.get('error')}")
+                valuation_results.append({
                     "stock_code": stock_code, 
                     "name": financials.get('name', stock_code), 
                     "error": financials.get("error", "數據提取失敗導致無法估值")
-                 })
-                 continue
+                })
+                continue
 
             valuation_result = data_handler.calculate_dcf_valuation(stock_code, financials, risk_preference, self.context)
             valuation_result['name'] = financials.get('name', stock_code) # Add stock name for display
@@ -456,9 +480,15 @@ class FilteringState(State):
             threshold = 0.15 # Default 15%
         min_eps = self.context.get('min_eps_threshold', 0.01) # Default minimum EPS > 0
 
+        # 成長股篩選設定
+        enable_growth_filter = self.context.get('enable_growth_filter', False)
         print(f"  (FilteringState) 收到 {len(results)} 筆估值結果準備篩選。篩選潛在報酬 > {threshold*100:.1f}%")
-        
+        if enable_growth_filter:
+            print("  (FilteringState) 成長股篩選已啟用")
+
         filtered_results = []
+        growth_filtered_count = 0
+        
         for res in results:
             if res.get("error"):
                 print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 存在估值錯誤，已跳過: {res['error']}")
@@ -475,21 +505,105 @@ class FilteringState(State):
             if intrinsic_value <= 0:
                 print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 因 內在價值 ({intrinsic_value:.2f}) <= 0 不符條件而未被選入。")
                 continue
+            
             # 主要篩選條件：潛在回報和內在價值
             if potential_return >= threshold:
                 # 直接排除EPS為負或過低的股票
                 if source_eps is None or source_eps < min_eps:
                     print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 近期會計EPS ({source_eps}) 為負或過低，已排除。")
                     continue
+
+                # 成長股篩選檢查
+                if enable_growth_filter:
+                    growth_result = self._evaluate_growth_stock(res)
+                    if not growth_result['is_growth_stock']:
+                        print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 未通過成長股條件，已篩除。")
+                        growth_filtered_count += 1
+                        continue
+                    else:
+                        print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 通過成長股條件檢查。")
+                        # 將成長股分析結果添加到結果中
+                        res['growth_analysis'] = growth_result
+                
                 filtered_results.append(res)
             else:
                 # 即使EPS為正，如果潛在回報不足，也不選入
                 print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 因潛在報酬 ({potential_return:.1%}) 未達標 (> {threshold*100:.1f}%) 而未被選入 (內在價值: {intrinsic_value:.2f}, 會計EPS: {source_eps}).")
 
         self.context['filtered_results'] = filtered_results
-        print(f"FilteringState 完成，共篩選出 {len(filtered_results)} 筆符合條件的股票。")
+        if enable_growth_filter:
+            print(f"FilteringState 完成，成長股篩選排除了 {growth_filtered_count} 筆股票，最終篩選出 {len(filtered_results)} 筆符合條件的股票。")
+        else:
+            print(f"FilteringState 完成，共篩選出 {len(filtered_results)} 筆符合條件的股票。")
         self.machine.transition_to(JoJoState.RESULTS_DISPLAY)
         print("FilteringState 完成。")
+    
+    def _evaluate_growth_stock(self, stock_result):
+        """評估單一股票是否符合成長股條件"""
+        try:
+            # 從context取得成長股設定
+            revenue_cagr_enabled = self.context.get('revenue_cagr_enabled', False)
+            revenue_cagr_threshold = self.context.get('revenue_cagr_threshold', 15.0) / 100.0  # 轉換為小數
+            
+            eps_cagr_enabled = self.context.get('eps_cagr_enabled', False)
+            eps_cagr_threshold = self.context.get('eps_cagr_threshold', 15.0) / 100.0  # 轉換為小數
+            
+            roe_enabled = self.context.get('roe_enabled', True)
+            roe_threshold = self.context.get('roe_threshold', 15.0) / 100.0  # 轉換為小數
+            
+            logic_operator = self.context.get('growth_logic_operator', 'AND')
+            
+            # 構建成長條件列表
+            criteria = []
+            
+            if revenue_cagr_enabled:
+                criteria.append(GrowthCriterion(
+                    metric_name='revenue_cagr',
+                    period_years=3,
+                    threshold=revenue_cagr_threshold,
+                    operator='>',
+                    label=f'近3年營收CAGR > {revenue_cagr_threshold*100:.1f}%'
+                ))
+            
+            if eps_cagr_enabled:
+                criteria.append(GrowthCriterion(
+                    metric_name='eps_cagr',
+                    period_years=3,
+                    threshold=eps_cagr_threshold,
+                    operator='>',
+                    label=f'近3年EPS CAGR > {eps_cagr_threshold*100:.1f}%'
+                ))
+            
+            if roe_enabled:
+                criteria.append(GrowthCriterion(
+                    metric_name='roe',
+                    period_years=None,
+                    threshold=roe_threshold,
+                    operator='>',
+                    label=f'最新ROE > {roe_threshold*100:.1f}%'
+                ))
+            
+            # 如果沒有啟用任何條件，視為通過
+            if not criteria:
+                return {
+                    "is_growth_stock": True,
+                    "details": []
+                }
+            
+            # 執行成長股評估
+            return evaluate_growth_potential(
+                financial_data=stock_result,
+                criteria_config=criteria,
+                logic_operator=logic_operator
+            )
+            
+        except Exception as e:
+            print(f"  (FilteringState) 成長股評估過程發生錯誤: {e}")
+            # 如果評估失敗，預設為不通過
+            return {
+                "is_growth_stock": False,
+                "details": [{"criterion": "評估錯誤", "value": None, "status": f"錯誤: {e}"}]
+            }
 
 
 class ResultsDisplayState(State):
