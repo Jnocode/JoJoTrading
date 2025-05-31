@@ -70,6 +70,24 @@ import data_handler  # Import data_handler for enhanced DCF settings
 from jojo_state_machine import JoJoStateMachine, JoJoState, State # 確保 State 也導入了 (原 BaseState)
 from modules.i18n import t
 from modules.growth_analyzer import DEFAULT_CRITERIA, evaluate_growth_potential, GrowthCriterion
+from dcf_optimized_config import DCF_OPTIMIZED_CONFIG  # Import optimized DCF configuration
+# 新增：導入台灣市場預設配置和用戶配置管理
+from taiwan_market_presets import (
+    get_all_taiwan_growth_presets, 
+    get_all_taiwan_dcf_presets,
+    get_all_taiwan_industry_presets,
+    apply_taiwan_growth_preset,
+    apply_taiwan_dcf_preset,
+    apply_taiwan_industry_preset
+)
+from user_config_manager import (
+    UserConfigManager,
+    UserGrowthConfig,
+    UserDCFConfig,
+    UserIntegratedConfig,
+    UserConfigMetadata
+)
+import json
 
 # --- Helper function to drive state machine ---
 def drive_state_machine(machine, target_state=None):
@@ -101,7 +119,7 @@ def drive_state_machine(machine, target_state=None):
 
     try:
         # machine.execute_state() # 讓狀態機自己執行當前狀態
-        # 為了保持 drive_state_machine 的現有結構，我們假設它仍然需要知道下一個狀態
+        # 為了保持 drive_state_machine 的現有構造，我們假設它仍然需要知道下一個狀態
         # 但這與 JoJoStateMachine 的 transition_to 和 execute_state 的耦合較高
         # 這裡的 next_state_enum 應該由 machine.execute_state() 返回或通過某种方式獲取
         # 假設 JoJoStateMachine 的 execute_state 返回下一個狀態（如果有的話）
@@ -346,6 +364,611 @@ if monte_carlo_iterations_ui != machine.context.get('monte_carlo_iterations'):
 if settings_changed:
     print("設定已更新，將在下次計算時生效")
 
+# === 初始化配置管理器 ===
+if 'config_manager' not in st.session_state:
+    st.session_state.config_manager = UserConfigManager()
+
+# 側邊欄配置選項
+st.sidebar.title("⚙️ 配置管理")
+
+# 配置選項卡
+config_tab = st.sidebar.radio(
+    "配置方式",
+    ["使用預設配置", "自定義配置", "台股預設自訂", "保存/載入配置"],
+    help="選擇配置方式：使用台灣市場專業預設、創建自定義配置、自訂台股預設或管理保存的配置"
+)
+
+# === 台灣市場預設配置與用戶自定義配置管理 ===
+if config_tab == "使用預設配置":
+    st.sidebar.subheader("🏭 台灣市場配置預設")
+    
+    # 台灣市場預設配置選擇
+    preset_category = st.sidebar.selectbox(
+        "預設配置類型",
+        ["成長股篩選", "DCF 估值", "產業特定"],
+        help="選擇要應用的預設配置類型"
+    )
+    
+    if preset_category == "成長股篩選":
+        growth_presets = get_all_taiwan_growth_presets()
+        preset_names = [preset.name for preset in growth_presets.values()]
+        
+        if preset_names:
+            selected_preset_name = st.sidebar.selectbox(
+                "選擇成長股預設",
+                preset_names,            help="選擇適合的成長股篩選預設配置"
+            )
+            
+            selected_preset = next(p for p in growth_presets.values() if p.name == selected_preset_name)
+            selected_preset_key = next(k for k, p in growth_presets.items() if p.name == selected_preset_name)
+            
+            # 顯示預設配置詳情
+            with st.sidebar.expander("📋 配置詳情"):
+                st.write(f"**描述:** {selected_preset.description}")
+                st.write(f"**適用於:** {selected_preset.recommended_for}")
+                st.write(f"**營收CAGR閾值:** {selected_preset.revenue_cagr_threshold:.1%}")
+                st.write(f"**EPS CAGR閾值:** {selected_preset.eps_cagr_threshold:.1%}")
+                st.write(f"**ROE閾值:** {selected_preset.roe_threshold:.1%}")
+                st.write(f"**最小市值:** {selected_preset.min_market_cap:.0f}億")
+            
+            if st.sidebar.button("🚀 應用成長股預設", help="將選擇的預設配置應用到系統"):
+                try:
+                    apply_taiwan_growth_preset(selected_preset_key, machine.context)
+                    st.sidebar.success(f"✅ 已應用預設：{selected_preset_name}")
+                    st.rerun()
+                except Exception as e:
+                    st.sidebar.error(f"❌ 應用預設失敗：{str(e)}")
+                    st.sidebar.info("💡 請檢查預設配置是否正確或聯繫技術支援")
+    
+    elif preset_category == "DCF 估值":
+        dcf_presets = get_all_taiwan_dcf_presets()
+        preset_names = [preset.name for preset in dcf_presets.values()]
+        
+        if preset_names:
+            selected_preset_name = st.sidebar.selectbox(
+                "選擇DCF預設",
+                preset_names,
+                help="選擇適合的DCF估值預設配置"
+            )
+            
+            selected_preset = next(p for p in dcf_presets.values() if p.name == selected_preset_name)
+            selected_preset_key = next(k for k, p in dcf_presets.items() if p.name == selected_preset_name)
+              # 顯示預設配置詳情
+            with st.sidebar.expander("📋 配置詳情"):
+                st.write(f"**描述:** {selected_preset.description}")
+                st.write(f"**適用於:** {selected_preset.recommended_for}")
+                st.write(f"**短期成長率:** {selected_preset.short_term_growth_rate:.1%}")
+                st.write(f"**終端成長率:** {selected_preset.terminal_growth_rate:.1%}")
+                st.write(f"**風險偏好:** {selected_preset.risk_preference:.1%}")
+                st.write(f"**預測年數:** {selected_preset.projection_years}年")
+                st.write(f"**篩選閾值:** {selected_preset.screening_threshold:.1%}")
+            
+            if st.sidebar.button("🚀 應用DCF預設", help="將選擇的預設配置應用到系統"):
+                try:
+                    apply_taiwan_dcf_preset(selected_preset_key, machine.context)
+                    st.sidebar.success(f"✅ 已應用預設：{selected_preset_name}")
+                    st.rerun()
+                except Exception as e:
+                    st.sidebar.error(f"❌ 應用預設失敗：{str(e)}")
+                    st.sidebar.info("💡 請檢查預設配置是否正確或聯繫技術支援")
+    
+    else:  # 產業特定
+        industry_presets = get_all_taiwan_industry_presets()
+        preset_names = [preset.name for preset in industry_presets.values()]
+        
+        if preset_names:
+            selected_preset_name = st.sidebar.selectbox(
+                "選擇產業特定預設",
+                preset_names,
+                help="選擇針對特定產業優化的預設配置"
+            )
+            
+            selected_preset = next(p for p in industry_presets.values() if p.name == selected_preset_name)
+            selected_preset_key = next(k for k, p in industry_presets.items() if p.name == selected_preset_name)
+            
+            # 顯示預設配置詳情
+            with st.sidebar.expander("📋 配置詳情"):
+                st.write(f"**描述:** {selected_preset.description}")
+                st.write(f"**適用於:** {selected_preset.recommended_for}")
+            
+            if st.sidebar.button("🚀 應用產業預設", help="將選擇的預設配置應用到系統"):
+                apply_taiwan_industry_preset(selected_preset_key, machine.context)
+                st.sidebar.success(f"✅ 已應用預設：{selected_preset_name}")
+                st.rerun()
+
+elif config_tab == "自定義配置":
+    st.sidebar.write("🎨 **創建自定義配置**")
+    
+    # 配置名稱和描述
+    config_name = st.sidebar.text_input(
+        "配置名稱",
+        placeholder="例如：我的成長股配置",
+        help="為你的自定義配置命名"
+    )
+    
+    config_description = st.sidebar.text_area(
+        "配置描述",
+        placeholder="描述這個配置的特點和適用情況...",
+        help="詳細描述配置的特點和使用場景",
+        height=60
+    )
+    
+    # 配置類型選擇
+    custom_config_type = st.sidebar.selectbox(
+        "配置類型",
+        ["成長股篩選", "DCF估值", "整合配置"],
+        help="選擇要創建的自定義配置類型"
+    )
+    
+    if custom_config_type == "成長股篩選":
+        st.sidebar.write("**成長股篩選參數**")
+        
+        # 營收CAGR設定
+        revenue_cagr_enabled = st.sidebar.checkbox("啟用營收CAGR篩選", value=True)
+        revenue_cagr_threshold = st.sidebar.slider(
+            "營收CAGR閾值 (%)", 0.0, 50.0, 15.0, 1.0
+        ) if revenue_cagr_enabled else 0.0
+        revenue_cagr_years = st.sidebar.selectbox(
+            "營收CAGR評估年數", [3, 5, 7], index=1
+        ) if revenue_cagr_enabled else 5
+        
+        # EPS CAGR設定
+        eps_cagr_enabled = st.sidebar.checkbox("啟用EPS CAGR篩選", value=True)
+        eps_cagr_threshold = st.sidebar.slider(
+            "EPS CAGR閾值 (%)", 0.0, 50.0, 20.0, 1.0
+        ) if eps_cagr_enabled else 0.0
+        eps_cagr_years = st.sidebar.selectbox(
+            "EPS CAGR評估年數", [3, 5, 7], index=1
+        ) if eps_cagr_enabled else 5
+        
+        # ROE設定
+        roe_enabled = st.sidebar.checkbox("啟用ROE篩選", value=True)
+        roe_threshold = st.sidebar.slider(
+            "ROE閾值 (%)", 0.0, 50.0, 15.0, 1.0
+        ) if roe_enabled else 0.0
+        
+        # 邏輯運算子
+        logic_operator = st.sidebar.selectbox(
+            "篩選邏輯", ["AND", "OR"], 
+            help="AND: 所有條件都要滿足, OR: 滿足任一條件即可"
+        )
+        
+        if st.sidebar.button("💾 保存成長股配置"):
+            if config_name.strip():
+                custom_growth_config = UserGrowthConfig(
+                    name=config_name,
+                    description=config_description,
+                    revenue_cagr_enabled=revenue_cagr_enabled,
+                    revenue_cagr_threshold=revenue_cagr_threshold/100,
+                    revenue_cagr_years=revenue_cagr_years,
+                    eps_cagr_enabled=eps_cagr_enabled,
+                    eps_cagr_threshold=eps_cagr_threshold/100,
+                    eps_cagr_years=eps_cagr_years,
+                    roe_enabled=roe_enabled,
+                    roe_threshold=roe_threshold/100,
+                    debt_ratio_enabled=False,
+                    debt_ratio_threshold=0.5,
+                    margin_enabled=False,
+                    margin_threshold=0.1,
+                    logic_operator=logic_operator,
+                    min_market_cap=None,
+                    exclude_industries=[],
+                    custom_conditions=[]
+                )
+                
+                success = st.session_state.config_manager.save_growth_config(custom_growth_config)
+                if success:
+                    st.sidebar.success(f"✅ 成長股配置已保存：{config_name}")
+                else:
+                    st.sidebar.error("❌ 保存配置失敗")
+            else:
+                st.sidebar.error("❌ 請輸入配置名稱")
+    
+    elif custom_config_type == "DCF估值":
+        st.sidebar.write("**DCF估值參數**")
+        
+        # DCF 參數設定
+        custom_short_growth = st.sidebar.slider("短期成長率 (%)", 5.0, 25.0, 10.0, 0.5)
+        custom_terminal_growth = st.sidebar.slider("終端成長率 (%)", 1.0, 8.0, 3.5, 0.1)
+        custom_risk_pref = st.sidebar.slider("風險偏好 (%)", 5.0, 15.0, 7.0, 0.1)
+        custom_proj_years = st.sidebar.selectbox("預測年數", [3, 4, 5, 6, 7], index=2)
+        custom_screening_threshold = st.sidebar.slider("篩選閾值 (%)", 5.0, 50.0, 15.0, 1.0)
+        
+        # 進階設定
+        custom_enable_anomaly = st.sidebar.checkbox("啟用異常檢測", value=True)
+        custom_anomaly_threshold = st.sidebar.slider("異常檢測閾值", 1.0, 3.0, 1.5, 0.1)
+        
+        if st.sidebar.button("💾 保存DCF配置"):
+            if config_name.strip():
+                custom_dcf_config = UserDCFConfig(
+                    name=config_name,
+                    description=config_description,
+                    short_term_growth_rate=custom_short_growth/100,
+                    terminal_growth_rate=custom_terminal_growth/100,
+                    risk_preference=custom_risk_pref/100,
+                    projection_years=custom_proj_years,
+                    screening_threshold=custom_screening_threshold/100,
+                    enable_anomaly_detection=custom_enable_anomaly,
+                    anomaly_threshold=custom_anomaly_threshold,
+                    calculation_method="enhanced",
+                    fcf_optimization={
+                        "maintenance_capex_ratio": 0.6,
+                        "working_capital_limit": 0.3,
+                        "heavy_asset_threshold": 0.15
+                    },
+                    industry_adjustments={}
+                )
+                
+                success = st.session_state.config_manager.save_dcf_config(custom_dcf_config)
+                if success:
+                    st.sidebar.success(f"✅ DCF配置已保存：{config_name}")
+                else:
+                    st.sidebar.error("❌ 保存配置失敗")
+            else:
+                st.sidebar.error("❌ 請輸入配置名稱")
+
+elif config_tab == "台股預設自訂":
+    st.sidebar.write("🛠️ **台股預設自訂**")
+    
+    # 讓使用者選擇要自訂的預設
+    all_growth_presets = get_all_taiwan_growth_presets()
+    all_dcf_presets = get_all_taiwan_dcf_presets()
+    all_industry_presets = get_all_taiwan_industry_presets()
+    
+    preset_options = {
+        "成長股篩選": all_growth_presets,
+        "DCF 估值": all_dcf_presets,
+        "產業特定": all_industry_presets
+    }
+    
+    # 讓使用者選擇預設類型
+    preset_type = st.sidebar.selectbox(
+        "選擇預設類型",
+        list(preset_options.keys()),
+        help="選擇要自訂的預設類型"
+    )
+    
+    selected_preset = None
+    selected_preset_name = None
+    selected_preset_key = None
+    
+    if preset_type and preset_type in preset_options:
+        presets = preset_options[preset_type]
+        
+        # 讓使用者選擇具體的預設
+        preset_names = [preset.name for preset in presets.values()]
+        selected_preset_name = st.sidebar.selectbox(
+            f"選擇{preset_type}預設",
+            preset_names,
+            help=f"選擇要自訂的{preset_type}預設配置"
+        )
+        
+        # 根據選擇的預設名稱獲取對應的預設物件
+        selected_preset = next((p for p in presets.values() if p.name == selected_preset_name), None)
+        selected_preset_key = next((k for k, p in presets.items() if p.name == selected_preset_name), None)
+        
+        if selected_preset:
+            # 顯示當前預設的詳細參數
+            st.sidebar.write("**當前預設參數**")
+            for key, value in selected_preset.__dict__.items():
+                if not key.startswith("_"):  # 排除私有屬性
+                    st.sidebar.write(f"**{key}:** {value}")
+            
+            # 讓使用者修改預設參數
+            st.sidebar.write("**修改預設參數**")
+              # 根據預設類型顯示對應的參數欄位
+            if preset_type == "成長股篩選":
+                st.sidebar.write("**自訂成長股篩選參數**")
+                
+                # 營收CAGR設定（預設啟用）
+                revenue_cagr_enabled = st.sidebar.checkbox("啟用營收CAGR篩選", value=True)
+                revenue_cagr_threshold = st.sidebar.slider(
+                    "營收CAGR閾值 (%)",
+                    0.0, 50.0,
+                    selected_preset.revenue_cagr_threshold * 100,  # 轉換為百分比顯示
+                    1.0
+                ) if revenue_cagr_enabled else 0.0
+                revenue_cagr_years = st.sidebar.selectbox(
+                    "營收CAGR評估年數",
+                    [3, 5, 7],
+                    index=1  # 預設選擇5年
+                ) if revenue_cagr_enabled else 5
+                
+                # EPS CAGR設定（預設啟用）
+                eps_cagr_enabled = st.sidebar.checkbox("啟用EPS CAGR篩選", value=True)
+                eps_cagr_threshold = st.sidebar.slider(
+                    "EPS CAGR閾值 (%)",
+                    0.0, 50.0,
+                    selected_preset.eps_cagr_threshold * 100,  # 轉換為百分比顯示
+                    1.0
+                ) if eps_cagr_enabled else 0.0
+                eps_cagr_years = st.sidebar.selectbox(
+                    "EPS CAGR評估年數",
+                    [3, 5, 7],
+                    index=1  # 預設選擇5年
+                ) if eps_cagr_enabled else 5
+                
+                # ROE設定（預設啟用）
+                roe_enabled = st.sidebar.checkbox("啟用ROE篩選", value=True)
+                roe_threshold = st.sidebar.slider(
+                    "ROE閾值 (%)",
+                    0.0, 50.0,
+                    selected_preset.roe_threshold * 100,  # 轉換為百分比顯示
+                    1.0
+                ) if roe_enabled else 0.0
+                
+                # 最小市值設定
+                min_market_cap = st.sidebar.slider(
+                    "最小市值 (億台幣)",
+                    0.0, 1000.0,
+                    selected_preset.min_market_cap,
+                    10.0
+                )
+                
+                # 邏輯運算子
+                logic_operator = st.sidebar.selectbox(
+                    "篩選邏輯",
+                    ["AND", "OR"],
+                    index=["AND", "OR"].index(selected_preset.logic_operator)
+                )                
+                # 輸入自訂配置名稱
+                custom_config_name = st.sidebar.text_input(
+                    "自訂配置名稱",
+                    value=f"自訂_{selected_preset_name}",
+                    help="輸入您的自訂配置名稱"
+                )
+                
+                # 保存自訂預設
+                if st.sidebar.button("💾 保存自訂預設"):
+                    if custom_config_name.strip():
+                        try:
+                            custom_growth_config = UserGrowthConfig(
+                                name=custom_config_name,
+                                description=f"基於 {selected_preset_name} 的自訂配置",
+                                revenue_cagr_enabled=revenue_cagr_enabled,
+                                revenue_cagr_threshold=revenue_cagr_threshold/100,
+                                revenue_cagr_years=revenue_cagr_years,
+                                eps_cagr_enabled=eps_cagr_enabled,
+                                eps_cagr_threshold=eps_cagr_threshold/100,
+                                eps_cagr_years=eps_cagr_years,
+                                roe_enabled=roe_enabled,
+                                roe_threshold=roe_threshold/100,
+                                debt_ratio_enabled=False,
+                                debt_ratio_threshold=0.5,
+                                margin_enabled=False,
+                                margin_threshold=0.1,
+                                logic_operator=logic_operator,
+                                min_market_cap=min_market_cap,
+                                exclude_industries=list(selected_preset.exclude_industries),
+                                custom_conditions=[]
+                            )
+                              # 嘗試保存自訂配置
+                            success = st.session_state.config_manager.save_growth_config(custom_growth_config)
+                            if success:
+                                st.sidebar.success(f"✅ 自訂預設已保存：{custom_growth_config.name}")
+                                st.sidebar.info("💡 您可以在「保存/載入配置」分頁中管理已保存的配置")
+                            else:
+                                st.sidebar.error("❌ 保存自訂預設失敗")
+                        except Exception as e:
+                            st.sidebar.error(f"❌ 保存自訂預設時發生錯誤：{str(e)}")
+                    else:
+                        st.sidebar.error("❌ 請輸入配置名稱")
+        
+            elif preset_type == "DCF 估值":
+                st.sidebar.write("**自訂DCF估值參數**")
+                
+                # DCF 參數設定
+                custom_short_growth = st.sidebar.slider("短期成長率 (%)", 5.0, 25.0, selected_preset.short_term_growth_rate * 100, 0.5)
+                custom_terminal_growth = st.sidebar.slider("終端成長率 (%)", 1.0, 8.0, selected_preset.terminal_growth_rate * 100, 0.1)
+                custom_risk_pref = st.sidebar.slider("風險偏好 (%)", 5.0, 15.0, selected_preset.risk_preference * 100, 0.1)
+                custom_proj_years = st.sidebar.selectbox("預測年數", [3, 4, 5, 6, 7], index=selected_preset.projection_years - 3)
+                custom_screening_threshold = st.sidebar.slider("篩選閾值 (%)", 5.0, 50.0, selected_preset.screening_threshold * 100, 1.0)
+                
+                # 進階設定
+                custom_enable_anomaly = st.sidebar.checkbox("啟用異常檢測", value=selected_preset.enable_anomaly_detection)
+                custom_anomaly_threshold = st.sidebar.slider("異常檢測閾值", 1.0, 3.0, 1.5, 0.1) if custom_enable_anomaly else 1.5
+                
+                # 輸入自訂配置名稱
+                custom_dcf_config_name = st.sidebar.text_input(
+                    "自訂DCF配置名稱",
+                    value=f"自訂_{selected_preset_name}",
+                    help="輸入您的自訂DCF配置名稱"
+                )
+                
+                if st.sidebar.button("💾 保存自訂DCF預設"):
+                    if custom_dcf_config_name.strip():
+                        try:
+                            custom_dcf_config = UserDCFConfig(
+                                name=custom_dcf_config_name,
+                                description=f"基於 {selected_preset_name} 的自訂DCF配置",
+                                short_term_growth_rate=custom_short_growth/100,
+                                terminal_growth_rate=custom_terminal_growth/100,
+                                risk_preference=custom_risk_pref/100,
+                                projection_years=custom_proj_years,
+                                screening_threshold=custom_screening_threshold/100,
+                                enable_anomaly_detection=custom_enable_anomaly,
+                                anomaly_threshold=custom_anomaly_threshold,
+                                calculation_method="enhanced",
+                                fcf_optimization={
+                                    "maintenance_capex_ratio": 0.6,
+                                    "working_capital_limit": 0.3,
+                                    "heavy_asset_threshold": 0.15
+                                },
+                                industry_adjustments={}
+                            )
+                            
+                            # 嘗試保存自訂配置
+                            success = st.session_state.config_manager.save_dcf_config(custom_dcf_config)
+                            if success:
+                                st.sidebar.success(f"✅ 自訂DCF預設已保存：{custom_dcf_config.name}")
+                                st.sidebar.info("💡 您可以在「保存/載入配置」分頁中管理已保存的配置")
+                            else:
+                                st.sidebar.error("❌ 保存自訂DCF預設失敗")
+                        except Exception as e:
+                            st.sidebar.error(f"❌ 保存自訂DCF預設時發生錯誤：{str(e)}")
+                    else:
+                        st.sidebar.error("❌ 請輸入DCF配置名稱")            
+            else:  # 產業特定
+                st.sidebar.write("**產業特定預設配置**")
+                st.sidebar.info("💡 產業特定預設配置主要用於應用，目前暫不支援自訂功能")
+                
+                # 顯示當前選擇的產業特定預設詳情
+                with st.sidebar.expander("📋 當前預設詳情"):
+                    st.write(f"**名稱:** {selected_preset.name}")
+                    st.write(f"**描述:** {selected_preset.description}")
+                    st.write(f"**推薦用於:** {selected_preset.recommended_for}")
+                    st.write(f"**適用產業:** {', '.join(selected_preset.industry_names)}")
+                
+                # 可以選擇直接應用此預設
+                if st.sidebar.button("🚀 直接應用此產業預設"):
+                    try:
+                        apply_taiwan_industry_preset(selected_preset_key, machine.context)
+                        st.sidebar.success(f"✅ 已應用產業預設：{selected_preset_name}")
+                        st.rerun()
+                    except Exception as e:
+                        st.sidebar.error(f"❌ 應用預設失敗：{str(e)}")
+
+# === 保存/載入配置 ===
+elif config_tab == "保存/載入配置":
+    st.sidebar.write("📂 **配置檔案管理**")
+    
+    # 載入保存的配置
+    saved_configs = st.session_state.config_manager.list_all_configs()
+    
+    if saved_configs:
+        config_names = [config["name"] for config in saved_configs]
+        
+        selected_config_name = st.sidebar.selectbox(
+            "選擇保存的配置",
+            ["選擇配置..."] + config_names,
+            help="選擇要載入的已保存配置"
+        )
+        
+        if selected_config_name != "選擇配置...":
+            selected_config = next(c for c in saved_configs if c["name"] == selected_config_name)
+            
+            # 顯示配置詳情
+            with st.sidebar.expander("📋 配置詳情"):
+                st.write(f"**名稱:** {selected_config['name']}")
+                st.write(f"**描述:** {selected_config.get('description', 'N/A')}")
+                st.write(f"**類型:** {selected_config['category']}")
+                st.write(f"**創建時間:** {selected_config.get('created_at', 'N/A')}")
+                st.write(f"**使用次數:** {selected_config.get('usage_count', 0)}")
+            
+            col1, col2 = st.sidebar.columns(2)
+            
+            with col1:
+                if st.button("📥 載入配置", help="載入選擇的配置到系統"):
+                    try:
+                        success = st.session_state.config_manager.load_and_apply_config(
+                            selected_config["id"], machine.context
+                        )
+                        if success:
+                            st.sidebar.success(f"✅ 已載入配置：{selected_config_name}")
+                            st.rerun()
+                        else:
+                            st.sidebar.error("❌ 載入配置失敗：配置檔案可能已損壞")
+                            st.sidebar.info("💡 請嘗試重新創建配置或聯繫技術支援")
+                    except Exception as e:
+                        st.sidebar.error(f"❌ 載入配置時發生錯誤：{str(e)}")
+                        st.sidebar.info("💡 請檢查配置檔案完整性")
+            
+            with col2:
+                if st.button("🗑️ 刪除配置", help="刪除選擇的配置"):
+                    try:
+                        success = st.session_state.config_manager.delete_config(selected_config["id"])
+                        if success:
+                            st.sidebar.success(f"✅ 已刪除配置：{selected_config_name}")
+                            st.rerun()
+                        else:
+                            st.sidebar.error("❌ 刪除配置失敗：找不到指定的配置檔案")
+                            st.sidebar.info("💡 配置可能已被刪除或檔案系統存在問題")
+                    except Exception as e:
+                        st.sidebar.error(f"❌ 刪除配置時發生錯誤：{str(e)}")
+                        st.sidebar.info("💡 請檢查檔案權限或聯繫技術支援")
+    
+    else:
+        st.sidebar.info("📝 尚未保存任何配置")
+    
+    # 匯出/匯入配置
+    st.sidebar.write("**配置檔案分享**")
+    
+    if saved_configs:
+        # 匯出配置
+        export_config_name = st.sidebar.selectbox(
+            "選擇要匯出的配置",
+            ["選擇配置..."] + [config["name"] for config in saved_configs],
+            help="選擇要匯出分享的配置"
+        )
+        
+        if export_config_name != "選擇配置..." and st.sidebar.button("📤 匯出配置"):
+            export_config = next(c for c in saved_configs if c["name"] == export_config_name)
+            config_json = st.session_state.config_manager.export_config(export_config["id"])
+            if config_json:
+                st.sidebar.download_button(
+                    label="💾 下載配置檔案",
+                    data=config_json,
+                    file_name=f"{export_config_name}_config.json",
+                    mime="application/json",
+                    help="下載配置檔案以分享給其他用戶"
+            )
+    
+    # 匯入配置
+    uploaded_config = st.sidebar.file_uploader(
+        "📁 匯入配置檔案",
+        type=['json'],
+        help="上傳其他用戶分享的配置檔案"
+    )
+    
+    if uploaded_config is not None:
+        try:
+            config_data = json.load(uploaded_config)
+            success = st.session_state.config_manager.import_config(config_data)
+            if success:
+                st.sidebar.success("✅ 配置匯入成功")
+                st.rerun()
+            else:
+                st.sidebar.error("❌ 配置匯入失敗：格式不正確或配置不相容")
+                st.sidebar.info("💡 請確認上傳的是有效的JoJoTrading配置檔案")
+        except json.JSONDecodeError:
+            st.sidebar.error("❌ 配置匯入失敗：檔案不是有效的JSON格式")
+            st.sidebar.info("💡 請確認上傳的檔案是正確的配置JSON檔案")
+        except UnicodeDecodeError:
+            st.sidebar.error("❌ 配置匯入失敗：檔案編碼錯誤")
+            st.sidebar.info("💡 請確認檔案使用UTF-8編碼")
+        except Exception as e:
+            st.sidebar.error(f"❌ 配置匯入失敗：{str(e)}")
+            st.sidebar.info("💡 請檢查檔案完整性或聯繫技術支援")
+
+# 顯示當前使用的配置資訊
+current_config_info = st.sidebar.container()
+with current_config_info:
+    st.markdown("---")
+    st.write("**📊 當前配置狀態**")
+    
+    # 檢查是否使用預設配置
+    if machine.context.get('applied_preset_name'):
+        st.info(f"🏭 使用預設：{machine.context['applied_preset_name']}")
+    elif machine.context.get('applied_custom_config'):
+        st.info(f"🎨 自定義配置：{machine.context['applied_custom_config']}")
+    else:
+        st.info("🔧 使用系統默認配置")
+    
+    # 快速重置按鈕
+    if st.button("🔄 重置為系統默認", help="重置所有配置為系統默認值"):
+        # 重置為 DCF_OPTIMIZED_CONFIG 默認值
+        machine.context.update({
+            'dcf_short_term_growth_rate': DCF_OPTIMIZED_CONFIG['dcf_short_term_growth_rate'],
+            'dcf_terminal_growth_rate': DCF_OPTIMIZED_CONFIG['dcf_terminal_growth_rate'],
+            'risk_preference': DCF_OPTIMIZED_CONFIG['risk_preference'],
+            'dcf_projection_years': DCF_OPTIMIZED_CONFIG['dcf_projection_years'],
+            'screening_threshold': DCF_OPTIMIZED_CONFIG['screening_threshold'],
+            'applied_preset_name': None,
+            'applied_custom_config': None
+        })
+        st.sidebar.success("✅ 已重置為系統默認配置")
+        st.rerun()
+
 # 顯示當前設定狀態
 if machine.context.get('use_enhanced_dcf', True):
     st.sidebar.success("🚀 增強版 DCF 已啟用")
@@ -486,9 +1109,47 @@ if machine.current_state == JoJoState.UI_INIT: # 使用 machine.current_state
         value=machine.context.get('enable_growth_filter', True),
         help="開啟後，系統將先判定成長股，再進行DCF估值"
     )
-    
     if enable_growth_filter:
-        st.write("**成長股判定條件：**")
+        # 快速配置選項
+        st.write("**📊 快速配置：**")
+        
+        config_options = {
+            "自訂設定": "custom",
+            "推薦配置 (平衡型)": "recommended", 
+            "積極成長型": "aggressive",
+            "穩健保守型": "conservative",
+            "科技股專用": "tech_focused"
+        }
+        
+        selected_config = st.selectbox(
+            "選擇預設配置",
+            options=list(config_options.keys()),
+            index=0,
+            help="選擇預設配置可快速套用優化參數，或選擇自訂設定手動調整"
+        )
+        
+        # 如果選擇了預設配置，應用配置
+        if selected_config != "自訂設定":
+            try:
+                from growth_stock_optimization_config import apply_config_to_context, get_optimized_config
+                config_name = config_options[selected_config]
+                machine.context = apply_config_to_context(machine.context, config_name)
+                
+                # 顯示配置描述
+                config = get_optimized_config(config_name)
+                st.info(f"✅ 已套用「{config.name}」配置\n\n{config.description}")
+                st.write(f"**適用情境：** {config.recommended_for}")
+                
+                # 顯示配置詳情
+                with st.expander("查看配置詳情"):
+                    st.write(f"**邏輯運算：** {config.criteria_set.logic_operator}")
+                    for criterion in config.criteria_set.criteria:
+                        threshold_pct = criterion.threshold * 100
+                        st.write(f"• {criterion.label.replace(f'> {threshold_pct:.0f}%', f'> {threshold_pct:.1f}%')}")
+            except ImportError:
+                st.warning("優化配置模組載入失敗，請使用自訂設定")
+        
+        st.write("**📋 成長股判定條件：**")
         
         # 營收CAGR條件
         revenue_cagr_enabled = st.checkbox(
@@ -812,68 +1473,66 @@ elif machine.current_state == JoJoState.RESULTS_DISPLAY: # 使用 machine.curren
 
         # 只取要顯示的欄位，並轉中文
         df_display = df_results[[col for col in display_columns if col in df_results.columns]].copy()
-        df_display.columns = [column_map.get(col, col) for col in df_display.columns]
-
-        # st.dataframe 顯示
+        df_display.columns = [column_map.get(col, col) for col in df_display.columns]        # st.dataframe 顯示
         st.dataframe(df_display, use_container_width=True, hide_index=True)
 
-    else:
-        st.info("沒有篩選到符合條件的股票，或仍在處理中。請檢查篩選條件或資料來源。")
+        # 下載功能 - 只在有結果時才顯示
+        import os
+        from datetime import datetime
 
-    import os
-    from datetime import datetime
-
-    col1, col2 = st.columns(2)
-    with col1:
-        # 合併下載按鈕：直接在結果頁顯示
-        if st.button("下載 CSV"):
-            export_dir = "export"
-            os.makedirs(export_dir, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            csv_path = os.path.join(export_dir, f"jojo_export_{timestamp}.csv")
-            df_display.to_csv(csv_path, index=False, encoding="utf-8-sig")
-            with open(csv_path, "rb") as f:
-                st.download_button(
-                    label="點此下載 CSV 檔案",
-                    data=f,
-                    file_name=os.path.basename(csv_path),
-                    mime="text/csv"
-                )
-        # Excel 下載
-        try:
-            import openpyxl
-            excel_supported = True
-        except ImportError:
-            excel_supported = False
-
-        if excel_supported:
-            if st.button("下載 Excel"):
+        col1, col2 = st.columns(2)
+        with col1:
+            # 合併下載按鈕：直接在結果頁顯示
+            if st.button("下載 CSV"):
                 export_dir = "export"
                 os.makedirs(export_dir, exist_ok=True)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                excel_path = os.path.join(export_dir, f"jojo_export_{timestamp}.xlsx")
-                df_display.to_excel(excel_path, index=False)
-                with open(excel_path, "rb") as f:
-                    st.download_button(
-                        label="點此下載 Excel 檔案",
+                csv_path = os.path.join(export_dir, f"jojo_export_{timestamp}.csv")
+                df_display.to_csv(csv_path, index=False, encoding="utf-8-sig")
+                with open(csv_path, "rb") as f:                    st.download_button(
+                        label="點此下載 CSV 檔案",
                         data=f,
-                        file_name=os.path.basename(excel_path),
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        file_name=os.path.basename(csv_path),
+                        mime="text/csv"
                     )
-        else:
-            st.info("如需 Excel 匯出，請安裝 openpyxl 套件。")
+            # Excel 下載
+            try:
+                import openpyxl
+                excel_supported = True
+            except ImportError:
+                excel_supported = False
 
-    with col2:
-        if st.button("重新查詢"):
-            machine.context['user_clicked_new_query_button'] = True
-            machine.transition_to(JoJoState.UI_INIT) # 明確轉換到 UI_INIT
-            machine.context['user_clicked_new_query_button'] = False # 重置標記
-            st.rerun()
-            
-        # 重新篩選按鈕
-        if st.button("返回條件設定/重新篩選"):
-            machine.transition_to(JoJoState.UI_INIT)
-            st.rerun()
+            if excel_supported:
+                if st.button("下載 Excel"):
+                    export_dir = "export"
+                    os.makedirs(export_dir, exist_ok=True)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    excel_path = os.path.join(export_dir, f"jojo_export_{timestamp}.xlsx")
+                    df_display.to_excel(excel_path, index=False)
+                    with open(excel_path, "rb") as f:
+                        st.download_button(
+                            label="點此下載 Excel 檔案",
+                            data=f,
+                            file_name=os.path.basename(excel_path),
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+            else:
+                st.info("如需 Excel 匯出，請安裝 openpyxl 套件。")
+
+        with col2:
+            if st.button("重新查詢"):
+                machine.context['user_clicked_new_query_button'] = True
+                machine.transition_to(JoJoState.UI_INIT) # 明確轉換到 UI_INIT
+                machine.context['user_clicked_new_query_button'] = False # 重置標記
+                st.rerun()
+                
+            # 重新篩選按鈕
+            if st.button("返回條件設定/重新篩選"):
+                machine.transition_to(JoJoState.UI_INIT)
+                st.rerun()
+
+    else:
+        st.info("沒有篩選到符合條件的股票，或仍在處理中。請檢查篩選條件或資料來源。")
 
 elif machine.current_state == JoJoState.EXPORT: # 使用 machine.current_state
     with st.spinner("正在匯出結果..."):

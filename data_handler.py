@@ -956,64 +956,50 @@ def calculate_original_dcf_valuation(stock_code, financials, risk_preference, co
     Enhanced DCF valuation with integrated data validation and advanced features
     """
     print(f"  (data_handler) 開始為股票 {stock_code} 進行增強版 DCF 估值...")
-    
-    # Phase 1: Data Validation
+      # Phase 1: Data Validation (改為驗證基礎財務數據)
     print(f"  (data_handler) 🔍 Phase 1: 執行財務數據品質驗證...")
-    validation_result = financial_validator.validate_dcf_inputs(financials, stock_code)
-    
-    # Log validation results
-    print(f"    (data_handler) 驗證品質分數: {validation_result.overall_quality_score:.1f}/100")
-    print(f"    (data_handler) 錯誤數量: {validation_result.error_count}, 警告數量: {validation_result.warning_count}")
+    validation_result = financial_validator.validate_financial_data(stock_code, financials)# Log validation results
+    print(f"    (data_handler) 驗證品質分數: {validation_result.quality_score:.1f}/100")
+    error_count = len([issue for issue in validation_result.issues if issue.level.value == 'error'])
+    warning_count = len([issue for issue in validation_result.issues if issue.level.value == 'warning'])
+    print(f"    (data_handler) 錯誤數量: {error_count}, 警告數量: {warning_count}")
     
     # Check for critical errors that would prevent DCF calculation
-    critical_errors = [issue for issue in validation_result.issues if issue.level == 'ERROR']
+    critical_errors = [issue for issue in validation_result.issues if issue.level.value == 'error']
     if critical_errors:
         error_messages = [f"{issue.field}: {issue.message}" for issue in critical_errors]
         print(f"    (data_handler) ❌ 嚴重錯誤阻止 DCF 計算: {'; '.join(error_messages)}")
         return {
             "stock_code": stock_code,
             "error": f"數據驗證失敗: {'; '.join(error_messages)}",
-            "validation_score": validation_result.overall_quality_score,
+            "validation_score": validation_result.quality_score,
             "data_quality": "POOR"
         }
-    
-    # Continue with enhanced DCF if validation passes
-    if validation_result.overall_quality_score >= 60:  # Minimum quality threshold
+      # Continue with enhanced DCF if validation passes
+    if validation_result.quality_score >= 60:  # Minimum quality threshold
         print(f"  (data_handler) 🚀 Phase 2: 執行增強版 DCF 估值計算...")
         
-        # Prepare enhanced DCF inputs
-        enhanced_inputs = {
-            'stock_code': stock_code,
-            'net_income': financials.get("net_income_parent"),
-            'shares_outstanding': financials.get("shares_outstanding"),
-            'capex': financials.get("capex"),
-            'depreciation': financials.get("depreciation", 0) + financials.get("amortization", 0),
-            'working_capital_change': calculate_working_capital_change(financials),
-            'current_market_price': financials.get("current_market_price"),
-            'risk_free_rate': context.get('risk_free_rate', 0.01),
-            'market_premium': context.get('market_premium', 0.06),
-            'beta': context.get('beta', 1.0),  # Default beta if not provided
-            'growth_rate_short': context.get('dcf_short_term_growth_rate', 0.07),
-            'growth_rate_terminal': context.get('dcf_terminal_growth_rate', 0.025),
-            'projection_years': context.get('dcf_projection_years', 5)
-        }
-        
-        # Execute enhanced DCF with scenario analysis
-        dcf_result = enhanced_dcf_model.calculate_dcf_with_scenarios(enhanced_inputs)
-        
-        # Add validation metrics to result
-        dcf_result.update({
-            'validation_score': validation_result.overall_quality_score,
-            'data_quality': get_quality_rating(validation_result.overall_quality_score),
-            'validation_warnings': [issue.message for issue in validation_result.issues if issue.level == 'WARNING']
-        })
-        
-        print(f"    (data_handler) ✅ 增強版 DCF 完成，內在價值: {dcf_result.get('intrinsic_value_per_share', 'N/A')}")
-        return dcf_result
+        # 使用集成 DCF 處理器
+        try:
+            from modules.integrated_dcf_handler import integrated_dcf_handler
+            dcf_result = integrated_dcf_handler.calculate_dcf_valuation(
+                stock_code=stock_code,
+                financials=financials,
+                risk_preference=risk_preference,
+                context=context
+            )
+            
+            print(f"    (data_handler) ✅ 增強版 DCF 完成，內在價值: {dcf_result.get('intrinsic_value_per_share', 'N/A')}")
+            return dcf_result
+            
+        except Exception as e:
+            print(f"    (data_handler) ⚠️ 增強版 DCF 處理錯誤: {str(e)}")
+            # Fall back to standard DCF
+            return calculate_standard_dcf_valuation(stock_code, financials, risk_preference, context, validation_result)
     
     else:
         # Fall back to standard DCF if quality is moderate
-        print(f"  (data_handler) ⚠️ 數據品質中等({validation_result.overall_quality_score:.1f})，使用標準 DCF...")
+        print(f"  (data_handler) ⚠️ 數據品質中等({validation_result.quality_score:.1f})，使用標準 DCF...")
         return calculate_standard_dcf_valuation(stock_code, financials, risk_preference, context, validation_result)
 
 def calculate_working_capital_change(financials):
@@ -1195,10 +1181,10 @@ def calculate_standard_dcf_valuation(stock_code, financials, risk_preference, co
         print(f"    (data_handler) 股票 {stock_code} 的流通股數無效或為0 ({shares_outstanding})，無法計算每股價值。")
         return {"stock_code": stock_code, "error": "流通股數無效或為0", "source_eps": current_eps_for_reference, "current_market_price": current_market_price, "net_income_source_field": net_income_source_field}
 
-    capex_raw = financials.get('capex') 
+    capex_raw = financials.get('capex')
     capex = -capex_raw if capex_raw is not None and capex_raw < 0 else (capex_raw if capex_raw is not None else 0.0)
     
-    depreciation = financials.get('depreciation') 
+    depreciation = financials.get('depreciation')
     amortization = financials.get('amortization') 
     depreciation_amortization = (depreciation if depreciation is not None else 0.0) + \
                                 (amortization if amortization is not None else 0.0)
@@ -1227,33 +1213,32 @@ def calculate_standard_dcf_valuation(stock_code, financials, risk_preference, co
         if wc_t0 is None: missing_wc_periods.append("T0")
         if wc_t1 is None: missing_wc_periods.append("T-1")
         print(f"    (data_handler) 警告：股票 {stock_code} 因缺少 {', '.join(missing_wc_periods)} 期的完整營運資本數據，無法計算精確ΔWC。將假設ΔWC為0。")
-
+    
     net_borrowing = 0.0 
     net_capex = capex - depreciation_amortization
     
     if not isinstance(net_income_to_parent, (int, float)):
         print(f"    (data_handler) 警告：股票 {stock_code} 的淨利 (net_income_to_parent from {net_income_source_field}) 不是有效數字 ({net_income_to_parent})。無法計算 FCFE。")
         return {"stock_code": stock_code, "error": "淨利數據無效", "source_eps": current_eps_for_reference, "current_market_price": current_market_price, "net_income_source_field": net_income_source_field}
-
+    
     fcfe = net_income_to_parent - net_capex - delta_wc + net_borrowing
     fcf_eps = fcfe / shares_outstanding
-    
     print(f"    (data_handler) 股票 {stock_code}: NI(from {net_income_source_field})={net_income_to_parent:.0f}, Capex={capex:.0f}, D&A={depreciation_amortization:.0f}, NetCapex={net_capex:.0f}, ΔWC={delta_wc:.0f}, NetBorrowing={net_borrowing:.0f}")
     print(f"    (data_handler) 股票 {stock_code}: Calculated FCFE={fcfe:.0f}, FCF_EPS={fcf_eps:.4f}")
     
-    short_term_growth_rate = context.get('dcf_short_term_growth_rate', 0.07) 
+    short_term_growth_rate = context.get('dcf_short_term_growth_rate', 0.08) 
     projection_years = context.get('dcf_projection_years', 5) 
-    terminal_growth_rate = context.get('dcf_terminal_growth_rate', 0.025) 
+    terminal_growth_rate = context.get('dcf_terminal_growth_rate', 0.03)
     
     if not isinstance(risk_preference, (int, float)) or risk_preference <= 0:
-        print(f"    (data_handler) 警告：股票 {stock_code} 的風險偏好/折現率 ({risk_preference}) 無效。使用預設值 0.10。")
-        discount_rate = 0.10
+        print(f"    (data_handler) 警告：股票 {stock_code} 的風險偏好/折現率 ({risk_preference}) 無效。使用預設值 0.08。")
+        discount_rate = 0.08
     else:
         discount_rate = risk_preference
         
-    if not isinstance(terminal_growth_rate, (int, float)): 
-        print(f"    (data_handler) 警告：股票 {stock_code} 的永續成長率 ({terminal_growth_rate}) 無效。使用預設值 0.025。")
-        terminal_growth_rate = 0.025
+    if not isinstance(terminal_growth_rate, (int, float)):
+        print(f"    (data_handler) 警告：股票 {stock_code} 的永續成長率 ({terminal_growth_rate}) 無效。使用預設值 0.03。")
+        terminal_growth_rate = 0.03
 
     if discount_rate <= terminal_growth_rate: 
         print(f"    (data_handler) 警告：股票 {stock_code} 的折現率 ({discount_rate:.2%}) 不大於永續成長率 ({terminal_growth_rate:.2%})。調整永續成長率為折現率的90%。")

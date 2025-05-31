@@ -46,7 +46,8 @@ class JoJoState(Enum):
 
 class JoJoStateMachine:
     def __init__(self):
-        self.current_state = JoJoState.CONFIG_LOAD        self.context = {
+        self.current_state = JoJoState.CONFIG_LOAD
+        self.context = {
             "selected_industry_name": None, # Changed from selected_industry
             "risk_preference": 0.10, # Default discount rate
             "potential_return_threshold": 0.15, # Default threshold for potential return
@@ -57,20 +58,21 @@ class JoJoStateMachine:
             "processed_data": {}, # Dict to store financial data for each stock
             "valuation_results": [],
             "filtered_results": [],
-            "error_message": None,
-            "dcf_short_term_growth_rate": 0.07, # 7% default
+            "error_message": None,            "dcf_short_term_growth_rate": 0.07, # 7% default
             "dcf_projection_years": 5,          # 5 years default
             "dcf_terminal_growth_rate": 0.025,  # 2.5% default
-            # === 一次性收益異常檢測參數 ===
-            "enable_anomaly_detection": True,   # 啟用異常檢測，預設開啟
-            "anomaly_threshold": 1.5,            # 異常檢測閾值，當期FCF_EPS超過歷史平均1.5倍視為異常
             # === Phase 1 Enhancement Parameters ===
             "use_enhanced_dcf": True,            # 使用增強版 DCF 估值
             "enable_data_validation": True,      # 啟用數據品質驗證
+            "data_quality_threshold": 0.7,       # 數據品質閾值
             "min_data_quality_score": 60,       # 最低數據品質分數閾值
             "enable_scenario_analysis": True,    # 啟用情境分析
             "enable_monte_carlo": False,         # 蒙地卡羅模擬 (預設關閉以提升速度)
-            "monte_carlo_iterations": 1000,     # 蒙地卡羅模擬次數
+            "monte_carlo_simulations": 1000,     # 蒙地卡羅模擬次數
+            "monte_carlo_iterations": 1000,     # 蒙地卡羅模擬次數 (別名)
+            "scenario_volatility": 0.15,        # 情境分析波動率
+            "enable_anomaly_detection": True,   # 啟用異常檢測
+            "anomaly_threshold": 1.5,           # 異常檢測閾值，當期FCF_EPS超過歷史平均1.5倍視為異常
             "risk_free_rate": 0.01,            # 無風險利率 (台灣10年期公債)
             "market_premium": 0.06,             # 市場風險溢價
             "beta_default": 1.0                  # 預設 Beta 值

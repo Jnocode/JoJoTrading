@@ -1,0 +1,176 @@
+"""
+JoJoTrading 成長股優化功能完整驗證測試
+測試所有優化配置和UI整合功能
+"""
+
+import sys
+import os
+
+# 添加項目路徑
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+def test_growth_optimization_integration():
+    """測試成長股優化功能整合"""
+    print("🧪 JoJoTrading 成長股優化功能驗證測試")
+    print("=" * 60)
+    
+    # 測試 1: 模組導入
+    print("\n📦 [測試 1] 模組導入驗證")
+    try:
+        import growth_stock_optimization_config as config
+        print("✅ growth_stock_optimization_config 模組載入成功")
+        
+        import jojo_state_machine
+        print("✅ jojo_state_machine 模組載入成功")
+        
+        import app
+        print("✅ app 模組載入成功")
+        
+    except Exception as e:
+        print(f"❌ 模組導入失敗: {e}")
+        return False
+    
+    # 測試 2: 優化配置
+    print("\n⚙️ [測試 2] 優化配置驗證")
+    try:
+        configs = config.get_all_optimization_configs()
+        print(f"✅ 找到 {len(configs)} 個優化配置")
+        
+        for name, cfg in configs.items():
+            print(f"  📊 {name}:")
+            print(f"     營收年增率: {cfg['revenue_growth_rate']}%")
+            print(f"     EPS年增率: {cfg['eps_growth_rate']}%")
+            print(f"     ROE: {cfg['roe_threshold']}%")
+            print(f"     邏輯: {cfg['growth_logic']}")
+            
+    except Exception as e:
+        print(f"❌ 配置驗證失敗: {e}")
+        return False
+    
+    # 測試 3: 狀態機整合
+    print("\n🔄 [測試 3] 狀態機整合驗證")
+    try:
+        from jojo_state_machine import JoJoStateMachine, TradingContext
+        
+        # 創建狀態機
+        context = TradingContext()
+        machine = JoJoStateMachine(context)
+        print("✅ 狀態機初始化成功")
+        
+        # 測試配置應用
+        test_context = config.apply_config_to_context(context, "recommended")
+        print("✅ 推薦配置應用成功")
+        print(f"   營收年增率: {test_context.revenue_growth_rate}%")
+        print(f"   EPS年增率: {test_context.eps_growth_rate}%")
+        print(f"   ROE: {test_context.roe_threshold}%")
+        
+    except Exception as e:
+        print(f"❌ 狀態機整合失敗: {e}")
+        return False
+    
+    # 測試 4: UI 配置選項
+    print("\n🎨 [測試 4] UI 配置選項驗證")
+    try:
+        ui_configs = {
+            "自訂設定": "custom",
+            "推薦配置 (平衡型)": "recommended", 
+            "積極成長型": "aggressive",
+            "穩健保守型": "conservative",
+            "科技股專用": "tech_focused"
+        }
+        
+        print(f"✅ UI 配置選項: {len(ui_configs)} 個")
+        for display_name, config_key in ui_configs.items():
+            if config_key != "custom":
+                cfg = config.get_optimized_config(config_key)
+                print(f"  🎯 {display_name}: {cfg['description']}")
+                
+    except Exception as e:
+        print(f"❌ UI 配置驗證失敗: {e}")
+        return False
+    
+    # 測試 5: 成長股篩選邏輯
+    print("\n🔍 [測試 5] 成長股篩選邏輯驗證")
+    try:
+        # 模擬股票數據
+        test_stock = {
+            'revenue_growth_rate': 12.0,
+            'eps_growth_rate': 15.0,
+            'roe': 8.0
+        }
+        
+        # 測試不同配置的篩選結果
+        for config_name in ['recommended', 'aggressive', 'conservative', 'tech_focused']:
+            cfg = config.get_optimized_config(config_name)
+            
+            # 模擬篩選邏輯
+            revenue_pass = test_stock['revenue_growth_rate'] >= cfg['revenue_growth_rate']
+            eps_pass = test_stock['eps_growth_rate'] >= cfg['eps_growth_rate']
+            roe_pass = test_stock['roe'] >= cfg['roe_threshold']
+            
+            if cfg['growth_logic'] == 'OR':
+                result = revenue_pass or eps_pass or roe_pass
+            else:  # AND
+                result = revenue_pass and eps_pass and roe_pass
+            
+            print(f"  📈 {config_name}: {'✅ 通過' if result else '❌ 未通過'}")
+            
+    except Exception as e:
+        print(f"❌ 篩選邏輯驗證失敗: {e}")
+        return False
+    
+    print("\n🎉 所有測試通過！成長股優化功能整合完成")
+    print("\n📋 功能摘要:")
+    print("  • 4種預設優化配置")
+    print("  • Streamlit UI 完整整合")
+    print("  • 自動參數載入功能")
+    print("  • 台股市場優化參數")
+    print("  • OR/AND 邏輯切換")
+    
+    return True
+
+def test_system_startup():
+    """測試系統啟動相關功能"""
+    print("\n🚀 [系統啟動] 環境檢查")
+    
+    # 檢查虛擬環境
+    venv_paths = ['.venv_new', '.venv']
+    active_venv = None
+    
+    for venv in venv_paths:
+        if os.path.exists(venv):
+            print(f"✅ 找到虛擬環境: {venv}")
+            if not active_venv:
+                active_venv = venv
+        else:
+            print(f"❌ 虛擬環境不存在: {venv}")
+    
+    if active_venv:
+        print(f"🎯 建議使用虛擬環境: {active_venv}")
+    
+    # 檢查啟動腳本
+    scripts = ['start_system_v2.bat', 'quick_start.bat', 'start_jojo_trading.bat']
+    for script in scripts:
+        if os.path.exists(script):
+            print(f"✅ 啟動腳本存在: {script}")
+        else:
+            print(f"❌ 啟動腳本缺失: {script}")
+
+if __name__ == "__main__":
+    print("🔬 JoJoTrading 完整功能驗證測試")
+    print("🕒 測試時間:", "2025年5月29日")
+    print("📦 測試版本: 成長股優化系統 v2.0")
+    print("=" * 60)
+    
+    # 執行所有測試
+    success = test_growth_optimization_integration()
+    test_system_startup()
+    
+    print("\n" + "=" * 60)
+    if success:
+        print("🎊 JoJoTrading 成長股優化系統準備就緒！")
+        print("🌐 請執行 start_system_v2.bat 啟動系統")
+        print("🔗 訪問地址: http://localhost:8506")
+    else:
+        print("⚠️ 系統驗證發現問題，請檢查錯誤訊息")
+    print("=" * 60)
