@@ -42,3 +42,60 @@ logs/
 
 # Export files
 export/
+
+# Development reports and documentation
+*_REPORT.md
+*_GUIDE.md
+*_STATUS.md
+DEVELOPER_LOG.md
+DEV_FLOW_AND_REQUIREMENTS.md
+DOCUMENTATION_CLEANUP_SUMMARY.md
+DEPLOYMENT_GUIDE.md
+GITHUB_DEPLOY_GUIDE.md
+GITHUB_PUSH_GUIDE.md
+QUICK_START.md
+MANUAL_STARTUP_GUIDE.md
+TESTING_GUIDE.md
+USER_GUIDE.md
+
+# Development and testing scripts
+analyze_*.py
+check_*.py
+comprehensive_*.py
+configuration_*.py
+dcf_*test*.py
+dcf_*debug*.py
+dcf_*verify*.py
+debug_*.py
+demo_*.py
+final_*.py
+fix_*.py
+manual_*.py
+organize_*.py
+quick_*.py
+simple_*.py
+test_*.py
+verify_*.py
+
+# Development configurations
+dcf_optimized_config.py
+growth_stock_optimization_config.py
+taiwan_market_presets.py
+user_config_manager.py
+
+# Output files
+output.txt
+*.svg
+*.mmd
+
+# Virtual environments
+.venv_new/
+
+# Additional data files
+industries.json
+折現估值計算表.xlsx
+
+# Legacy files (use archive directory instead)
+jojo_state_machine.py
+data_handler.py
+data_fetching.py

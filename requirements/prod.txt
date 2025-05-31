@@ -1,0 +1,4 @@
+# 生產環境依賴
+-r base.txt
+gunicorn>=21.2.0
+supervisor>=4.2.5
