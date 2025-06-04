@@ -438,162 +438,56 @@ class TradingSystemUI:
         """獲取模擬當前價格"""
         import random
         base_price = hash(stock_code) % 200 + 50
-        volatility = random.uniform(-0.05, 0.05)
-        return base_price * (1 + volatility)
+        return round(base_price + random.uniform(-10, 10), 2)
     
     def _render_holdings_chart(self, open_trades: List[TradeEntry]):
         """渲染持倉分析圖表"""
         if not open_trades:
             return
         
-        # 按股票分組
-        holdings_summary = {}
+        # 模擬持倉損益數據
         for trade in open_trades:
-            code = trade.stock_code
-            if code not in holdings_summary:
-                holdings_summary[code] = {
-                    'quantity': 0,
-                    'total_cost': 0,
-                    'unrealized_pnl': 0
-                }
-            
-            holdings_summary[code]['quantity'] += trade.quantity
-            holdings_summary[code]['total_cost'] += trade.entry_price * trade.quantity
-            holdings_summary[code]['unrealized_pnl'] += trade.unrealized_pnl or 0
+            current_price = self._get_mock_current_price(trade.stock_code)
+            self.trade_recorder.update_unrealized_pnl(trade.stock_code, current_price)
         
-        # 創建圖表數據
-        stocks = list(holdings_summary.keys())
-        unrealized_pnl = [holdings_summary[stock]['unrealized_pnl'] for stock in stocks]
+        # 繪製持倉圖表
+        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                            subplot_titles=("未實現損益", "持倉比例"), 
+                            vertical_spacing=0.1)
         
-        # 損益圖表
-        fig = go.Figure(data=[
-            go.Bar(
-                x=stocks,
-                y=unrealized_pnl,
-                marker_color=['green' if pnl >= 0 else 'red' for pnl in unrealized_pnl],
-                text=[f"${pnl:.2f}" for pnl in unrealized_pnl],
-                textposition='auto'
-            )
-        ])
+        # 未實現損益
+        unrealized_pnls = [trade.unrealized_pnl for trade in open_trades]
+        stock_codes = [trade.stock_code for trade in open_trades]
+        
+        fig.add_trace(go.Bar(
+            x=stock_codes,
+            y=unrealized_pnls,
+            name="未實現損益",
+            marker_color='indianred'
+        ), row=1, col=1)
+        
+        # 持倉比例圓餅圖
+        total_investment = sum(trade.entry_price * trade.quantity for trade in open_trades)
+        if total_investment > 0:
+            holdings_distribution = [trade.entry_price * trade.quantity / total_investment * 100 for trade in open_trades]
+        else:
+            holdings_distribution = [0] * len(open_trades)
+        
+        fig.add_trace(go.Pie(
+            labels=stock_codes,
+            values=holdings_distribution,
+            name="持倉比例",
+            hoverinfo="label+percent",
+            marker=dict(colors=px.colors.sequential.Plasma[:len(open_trades)])
+        ), row=2, col=1)
         
         fig.update_layout(
-            title="持倉未實現損益",
-            xaxis_title="股票代碼",
-            yaxis_title="未實現損益 ($)",
-            showlegend=False
+            title_text="持倉分析",
+            height=600,
+            showlegend=True
         )
         
         st.plotly_chart(fig, use_container_width=True)
-    
-    def _analyze_stock_with_ai(self, stock_code: str):
-        """使用AI分析股票"""
-        # 獲取模擬數據
-        current_price = self._get_mock_current_price(stock_code)
-        mock_data = {
-            'stock_code': stock_code,
-            'stock_name': f"{stock_code}公司",
-            'current_price': current_price,
-            'intrinsic_value_per_share': current_price * (0.8 + 0.6 * hash(stock_code) % 100 / 100),
-            'pe_ratio': 15 + (hash(stock_code) % 20),
-            'pb_ratio': 0.8 + (hash(stock_code) % 30) / 10,
-            'roe': 0.05 + (hash(stock_code) % 20) / 100,
-            'debt_ratio': 0.2 + (hash(stock_code) % 50) / 100,
-            'validation_score': 40 + (hash(stock_code) % 50)
-        }
-        
-        # AI分析
-        analysis = self.ai_advisor.analyze_stock(stock_code, mock_data, current_price)
-        signal = self.ai_advisor.generate_trading_signal(analysis)
-        
-        # 顯示分析結果
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader(f"📊 {stock_code} 基本面分析")
-            st.write(f"**當前價格:** ${current_price:.2f}")
-            st.write(f"**DCF內在價值:** ${analysis.dcf_intrinsic_value:.2f}")
-            st.write(f"**折價/溢價:** {analysis.dcf_discount:.1%}")
-            st.write(f"**PE比率:** {analysis.pe_ratio:.1f}")
-            st.write(f"**ROE:** {analysis.roe:.1%}")
-            st.write(f"**負債比率:** {analysis.debt_ratio:.1%}")
-        
-        with col2:
-            st.subheader("📈 評分分析")
-            st.progress(analysis.fundamental_score / 100, text=f"基本面評分: {analysis.fundamental_score:.0f}/100")
-            st.progress(analysis.technical_score / 100, text=f"技術面評分: {analysis.technical_score:.0f}/100")
-            st.progress(analysis.overall_score / 100, text=f"綜合評分: {analysis.overall_score:.0f}/100")
-        
-        # 顯示交易信號
-        if signal:
-            st.success(f"🎯 **AI建議:** {signal.action.value}")
-            st.write(f"**信心度:** {signal.confidence:.0f}%")
-            st.write(f"**目標價格:** ${signal.target_price:.2f}")
-            st.write(f"**風險等級:** {signal.risk_level}")
-            st.write(f"**建議理由:** {signal.reasoning}")
-            
-            if signal.stop_loss:
-                st.write(f"**建議停損:** ${signal.stop_loss:.2f}")
-        else:
-            st.info("💡 目前沒有明確的交易信號")
-    
-    def _scan_entry_signals(self, watchlist: List[str]):
-        """掃描進場信號"""
-        if not watchlist:
-            st.warning("請先設定監視列表")
-            return
-        
-        entry_signals = self.signal_generator.generate_entry_signals(watchlist)
-        
-        if entry_signals:
-            st.success(f"🎯 發現 {len(entry_signals)} 個進場信號")
-            
-            for signal_data in entry_signals[:5]:  # 顯示前5個
-                signal = signal_data['signal']
-                with st.expander(f"📈 {signal.stock_code} - {signal.action.value} (信心度: {signal.confidence:.0f}%)"):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.write(f"**目標價格:** ${signal.target_price:.2f}")
-                        st.write(f"**風險等級:** {signal.risk_level}")
-                        st.write(f"**優先級:** {signal_data['priority']:.2f}")
-                    
-                    with col2:
-                        st.write(f"**建議倉位:** {signal_data['suggested_position_size']:.1%}")
-                        st.write(f"**信號類型:** {signal.signal_type.value}")
-                    
-                    st.write(f"**理由:** {signal.reasoning}")
-        else:
-            st.info("🔍 目前沒有發現進場信號")
-    
-    def _scan_exit_signals(self):
-        """掃描出場信號"""
-        exit_signals = self.signal_generator.generate_exit_signals()
-        
-        if exit_signals:
-            st.warning(f"🚪 發現 {len(exit_signals)} 個出場信號")
-            
-            for signal in exit_signals:
-                with st.expander(f"🔄 {signal['stock_code']} - {signal['exit_reason']} (緊急度: {signal['urgency']}/10)"):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.write(f"**進入價格:** ${signal['entry_price']:.2f}")
-                        st.write(f"**當前價格:** ${signal['current_price']:.2f}")
-                    
-                    with col2:
-                        st.write(f"**未實現損益:** ${signal['unrealized_pnl']:.2f}")
-                        st.write(f"**出場理由:** {signal['exit_reason']}")
-                    
-                    if st.button(f"✅ 執行出場 - {signal['stock_code']}", key=f"exit_{signal['trade_id']}"):
-                        success = self.trade_recorder.close_trade(
-                            signal['trade_id'], 
-                            signal['current_price']
-                        )
-                        if success:
-                            st.success("✅ 交易已平倉")
-                            st.rerun()
-        else:
-            st.info("✅ 目前沒有需要出場的持倉")
     
     def _render_trade_statistics(self, trades: List[TradeEntry]):
         """渲染交易統計"""
@@ -606,7 +500,6 @@ class TradingSystemUI:
         open_trades = [t for t in trades if t.status == TradeStatus.OPEN]
         
         winning_trades = [t for t in closed_trades if t.realized_pnl and t.realized_pnl > 0]
-        losing_trades = [t for t in closed_trades if t.realized_pnl and t.realized_pnl < 0]
         
         col1, col2, col3, col4 = st.columns(4)
         
@@ -647,33 +540,49 @@ class TradingSystemUI:
                 x=dates, 
                 y=pnl_values,
                 title="累積損益曲線",
-                labels={'x': '時間', 'y': '累積損益 ($)'}
+                labels={'x': '時間', 'y': '累積損益 ($)'},
+                template="plotly_white"
             )
             st.plotly_chart(fig, use_container_width=True)
     
     def _generate_portfolio_recommendations(self):
         """生成投資組合建議"""
         with st.spinner("生成投資組合建議..."):
-            recommendations = self.ai_advisor.generate_portfolio_recommendations()
+            # 模擬投資組合建議
+            recommendations = [
+                {
+                    'title': '成長型投資組合',
+                    'risk_level': '中高',
+                    'expected_return': 0.12,
+                    'allocation': '70%股票, 30%債券',
+                    'time_horizon': '3-5年',
+                    'description': '適合追求長期成長的投資者'
+                },
+                {
+                    'title': '平衡型投資組合',
+                    'risk_level': '中',
+                    'expected_return': 0.08,
+                    'allocation': '50%股票, 50%債券',
+                    'time_horizon': '2-3年',
+                    'description': '適合風險承受度中等的投資者'
+                }
+            ]
             
             st.subheader("📊 投資組合建議")
             
-            if recommendations:
-                for i, rec in enumerate(recommendations[:3], 1):
-                    with st.expander(f"建議 {i}: {rec['title']}"):
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.write(f"**風險等級:** {rec['risk_level']}")
-                            st.write(f"**預期回報:** {rec['expected_return']:.1%}")
-                        
-                        with col2:
-                            st.write(f"**建議比重:** {rec['allocation']}")
-                            st.write(f"**時間框架:** {rec['time_horizon']}")
-                        
-                        st.write(f"**說明:** {rec['description']}")
-            else:
-                st.info("目前沒有特別的投資組合建議")
+            for i, rec in enumerate(recommendations, 1):
+                with st.expander(f"建議 {i}: {rec['title']}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write(f"**風險等級:** {rec['risk_level']}")
+                        st.write(f"**預期回報:** {rec['expected_return']:.1%}")
+                    
+                    with col2:
+                        st.write(f"**建議比重:** {rec['allocation']}")
+                        st.write(f"**時間框架:** {rec['time_horizon']}")
+                    
+                    st.write(f"**說明:** {rec['description']}")
     
     def _display_existing_signals(self):
         """顯示現有信號"""
@@ -707,72 +616,3 @@ class TradingSystemUI:
                     st.write(f"**目標價格:** ${signal['target_price']:.2f}")
                     st.write(f"**信號時間:** {signal['timestamp'].strftime('%Y-%m-%d %H:%M')}")
                 
-                with col2:
-                    st.write(f"**建議理由:** {signal['reasoning']}")
-
-    # ...existing code...
-        """匯出交易記錄"""
-        df = self.trade_recorder.to_dataframe()
-        if not df.empty:
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="📥 下載CSV檔案",
-                data=csv,
-                file_name=f"trade_records_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
-        else:
-            st.info("沒有交易記錄可匯出")
-    
-    def _render_trade_statistics(self, trades: List[TradeEntry]):
-        """渲染交易統計"""
-        if not trades:
-            return
-        
-        # 基本統計
-        total_trades = len(trades)
-        closed_trades = [t for t in trades if t.status == TradeStatus.CLOSED]
-        open_trades = [t for t in trades if t.status == TradeStatus.OPEN]
-        
-        winning_trades = [t for t in closed_trades if t.realized_pnl and t.realized_pnl > 0]
-        losing_trades = [t for t in closed_trades if t.realized_pnl and t.realized_pnl < 0]
-        
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("總交易數", total_trades)
-        
-        with col2:
-            st.metric("開倉中", len(open_trades))
-        
-        with col3:
-            win_rate = len(winning_trades) / len(closed_trades) * 100 if closed_trades else 0
-            st.metric("勝率", f"{win_rate:.1f}%")
-        
-        with col4:
-            total_pnl = sum(t.realized_pnl for t in closed_trades if t.realized_pnl)
-            st.metric("總損益", f"${total_pnl:.2f}")
-    
-    def _render_performance_charts(self, trades: List[TradeEntry]):
-        """渲染績效圖表"""
-        if not trades:
-            return
-        
-        closed_trades = [t for t in trades if t.status == TradeStatus.CLOSED and t.realized_pnl is not None]
-        
-        if closed_trades:
-            # 累積損益圖
-            cumulative_pnl = 0
-            dates = []
-            pnl_values = []
-              for trade in sorted(closed_trades, key=lambda x: x.exit_time or x.entry_time):
-                if trade.realized_pnl is not None:
-                    cumulative_pnl += trade.realized_pnl
-                dates.append(trade.exit_time or trade.entry_time)
-                pnl_values.append(cumulative_pnl)
-            
-            fig = px.line(
-                x=dates, 
-                y=pnl_values,
-                title="累積損益曲線",
-                labels={'x': '時間', 'y': '累積損益 ($)'}
