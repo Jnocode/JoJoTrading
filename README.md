@@ -1,34 +1,156 @@
-# JoJo Trading - 基於 DCF 估值的台股篩選系統
+# 🚀 JoJo Trading Platform
+
+**整合DCF估值分析與智能交易系統的綜合平台**
 
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.45.1-FF6B6B.svg)](https://streamlit.io)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
-[![Version](https://img.shields.io/badge/Version-1.0.0-green.svg)](https://github.com)
+[![Version](https://img.shields.io/badge/Version-2.0.0-green.svg)](https://github.com)
 
-## 🚀 系統特色
+## ⚡ 快速啟動
 
-### 核心功能
-- **🔍 數據質量驗證系統**：智能評估財務數據可靠度，確保估值準確性
-- **📊 增強型 DCF 模型**：集成 CAPM 動態折現率、情景分析與蒙地卡羅模擬
+**三種啟動方式：**
+
+```bash
+# 方法 1: 使用批次檔 (推薦)
+quick_start.bat
+
+# 方法 2: 直接執行
+streamlit run main_app.py
+
+# 方法 3: 檢查系統狀態
+python scripts/utilities/system_check.py
+```
+
+**瀏覽器會自動開啟：** http://localhost:8501
+
+## 📁 專案結構
+
+經過完整整理後的標準化專案結構：
+
+```
+jojo_trading/
+├── 🚀 main_app.py              # 主要執行檔（唯一入口點）
+├── 📖 README.md                # 專案說明
+├── 🏁 quick_start.bat          # 快速啟動腳本
+├── ⚙️ requirements.txt         # 依賴清單
+├── 🔧 pyproject.toml           # 專案配置
+├── 🧪 pytest.ini              # 測試配置
+│
+├── 📂 src/jojo_trading/        # 核心源碼模組
+│   ├── 🧠 core/               # 核心業務邏輯
+│   ├── ⚙️ config/             # 配置管理
+│   ├── 🎨 ui/                 # 用戶介面
+│   ├── 📈 analysis/           # 分析模組
+│   └── 🔧 utils/              # 工具函數
+│
+├── 🧪 tests/                  # 完整測試套件
+│   ├── unit/                  # 單元測試 (40+ 檔案)
+│   ├── integration/           # 整合測試 (15+ 檔案)
+│   └── performance/           # 性能測試
+│
+├── 📚 docs/                   # 文檔與報告
+│   ├── reports/               # 專案報告 (30+ 檔案)
+│   └── diagrams/              # 架構圖表
+│
+├── 📊 data/                   # 資料目錄
+│   └── raw/                   # 原始資料
+│
+├── 🔨 scripts/               # 腳本工具
+│   ├── deploy/               # 部署腳本
+│   └── utilities/            # 工具腳本
+│
+└── 📦 legacy/                # 舊版檔案歸檔
+```
+
+## 🌟 系統功能
+
+### 四大核心模組
+1. **🏠 系統總覽** - 系統狀態監控與快速導航
+2. **💰 DCF估值分析** - 完整的DCF模型分析系統
+3. **🤖 智能交易系統** - AI交易建議與記錄管理
+4. **⚙️ 系統設定** - 參數配置與個人化設定
+
+### DCF估值分析特色
+- **🔍 數據質量驗證**：智能評估財務數據可靠度（品質門檻45分）
+- **📊 增強型DCF模型**：集成CAPM動態折現率、情景分析與蒙地卡羅模擬
 - **🤖 智能方法選擇**：根據數據質量自動選擇最適合的估值方法
-- **📈 風險量化分析**：提供 VaR、標準差等全面風險評估指標
+- **📈 風險量化分析**：提供VaR、標準差等全面風險評估指標
 
-### 主要功能
-- **多語介面**：支援中文/英文切換，所有自訂UI皆可即時切換語言
-- **產業/個股篩選**：可依產業或自選個股進行財報與估值分析
-- **成長股過濾**：可依營收/盈餘CAGR、ROE、毛利率等指標自訂過濾成長股
-- **智能 DCF 估值**：支援標準與增強型雙模式，含情景分析與蒙地卡羅模擬
-- **參數自動化**：無風險利率、通膨率、永續成長率可自動API獲取或手動輸入
-- **除錯模式**：模組化debug_tools，支援清除快取、API延遲調整、模擬數據測試
-- **結果匯出**：支援CSV/Excel下載，所有參數與來源可記錄於報表
+### 智能交易系統特色
+- **📝 交易記錄管理**：完整的買賣記錄與損益追蹤
+- **🤖 AI交易建議**：基於技術分析與基本面的智能建議
+- **📊 信號生成器**：自動化交易信號生成與通知
+- **💡 風險管理**：智能倉位管理與風險控制建議
 
 ## 📁 專案結構
 
 ```
 jojo_trading/
-├── src/jojo_trading/           # 主要模組套件
-│   ├── __init__.py            # 套件初始化文件 (v1.0.0)
-│   ├── core/                  # 核心功能模組
-│   │   ├── __init__.py
+├── main_app.py                    # 🚀 主要執行檔（唯一入口）
+├── README.md                      # 專案說明文件
+├── requirements.txt               # Python套件相依清單
+├── .env                          # 環境變數設定
+│
+├── 📂 src/jojo_trading/          # 核心原始碼套件
+│   ├── core/                     # 核心業務邏輯
+│   ├── ui/                       # 用戶介面模組
+│   ├── trading/                  # 智能交易系統
+│   └── utils/                    # 工具函數模組
+│
+├── 📂 config/                    # 系統配置檔案
+├── 📂 data/                      # 資料檔案目錄
+├── 📂 tests/                     # 測試檔案目錄
+└── 📂 docs/                      # 文件與報告目錄
+```
+
+## 🔧 安裝與設定
+
+### 系統需求
+- Python 3.8+
+- Streamlit 1.28+
+- 網路連接（用於資料獲取）
+
+### 安裝步驟
+
+1. **安裝相依套件**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **設定環境變數**（可選）
+   ```bash
+   cp .env.example .env
+   # 編輯 .env 檔案設定API金鑰等
+   ```
+
+3. **啟動應用程式**
+   ```bash
+   streamlit run main_app.py
+   ```
+
+## 🎯 使用指南
+
+### 基本操作
+1. **系統啟動**：執行 `streamlit run main_app.py`
+2. **瀏覽器訪問**：自動開啟 http://localhost:8501
+3. **功能導航**：使用左側選單切換不同功能模組
+4. **參數設定**：在「系統設定」頁面調整個人偏好
+
+### DCF分析流程
+1. 選擇分析標的（個股或產業）
+2. 檢視數據質量評分
+3. 選擇估值模式（標準/增強）
+4. 設定分析參數
+5. 執行DCF計算
+6. 查看結果與風險分析
+7. 匯出分析報告
+
+### 交易系統使用
+1. 建立交易記錄
+2. 查看AI建議分析
+3. 設定交易信號
+4. 追蹤投資組合
+5. 風險管理檢視
 │   │   ├── state_machine.py   # 狀態機流程控制
 │   │   ├── data_handler.py    # 資料處理引擎
 │   │   ├── dcf_calculator.py  # DCF 計算器

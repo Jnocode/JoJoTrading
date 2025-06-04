@@ -29,10 +29,15 @@ import pandas as pd
 from enum import Enum, auto
 import json # For loading industries.json
 import requests # Added to resolve NameError
+import sys
+from pathlib import Path
 
-# 內部模組導入
-from . import data_handler
-from ..analysis.growth_analyzer import evaluate_growth_potential, GrowthCriterion
+# 添加專案根目錄到 Python 路徑
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from src.jojo_trading.core import data_handler
+from modules.growth_analyzer import evaluate_growth_potential, GrowthCriterion
 
 class JoJoState(Enum):
     CONFIG_LOAD = auto()
@@ -397,9 +402,7 @@ class DataFetchState(State):
                 financial_data_for_stock.update(extracted_is_items)
                 financial_data_for_stock['is_report_date'] = extracted_is_items.get('report_date')
             else:
-                financial_data_for_stock['error'].append("無法獲取損益表")
-
-            # Get current market price using the new FinMind price fetching function
+                financial_data_for_stock['error'].append("無法獲取損益表")            # Get current market price using the new FinMind price fetching function
             # Use the latest available financial report date as the target date for the price,
             # or None to get the absolute latest price if no report dates are available.
             price_target_date = financial_data_for_stock.get('is_report_date') or \
@@ -409,7 +412,7 @@ class DataFetchState(State):
             financial_data_for_stock['current_market_price'] = current_price
             if current_price is None:
                 financial_data_for_stock['error'].append(f"無法從FinMind獲取股票 {stock_code} 的目前股價 (目標日期: {price_target_date})")
-
+            
             # --- shares_outstanding 自動補全 ---
             if not financial_data_for_stock.get("shares_outstanding"):
                 # 1. 先從 stock_detail 補
@@ -417,32 +420,21 @@ class DataFetchState(State):
                 if so:
                     financial_data_for_stock["shares_outstanding"] = so
                 else:
-                    # 2. 嘗試對齊財報期末自動下載/解析證交所股本異動表
+                    # 2. 嘗試從 all_companies_openapi_data 補 (移除了 data_fetching 依賴)
                     try:
-                        import data_fetching
-                        # 優先用資產負債表 T0 日期
-                        report_date = financial_data_for_stock.get('bs_report_date_t0') or \
-                                      financial_data_for_stock.get('is_report_date') or \
-                                      financial_data_for_stock.get('cf_report_date')
-                        so_csv = None
-                        if report_date:
-                            so_csv = data_fetching.get_shares_outstanding_from_twse_csv(stock_code, report_date)
-                        if so_csv:
-                            financial_data_for_stock["shares_outstanding"] = so_csv
-                        else:
-                            # 3. 再從 all_companies_openapi_data 補
-                            all_companies = self.context.get("all_companies_openapi_data", [])
-                            so_found = None
-                            for comp in all_companies:
-                                if str(comp.get("公司代號")) == str(stock_code):
-                                    so_str = comp.get("已發行普通股數或TDR原股發行股數")
-                                    try:
-                                        so_found = float(str(so_str).replace(",", ""))
-                                    except Exception:
-                                        so_found = None
-                                    break
-                            if so_found:
-                                financial_data_for_stock["shares_outstanding"] = so_found
+                        # 直接從 all_companies_openapi_data 補
+                        all_companies = self.context.get("all_companies_openapi_data", [])
+                        so_found = None
+                        for comp in all_companies:
+                            if str(comp.get("公司代號")) == str(stock_code):
+                                so_str = comp.get("已發行普通股數或TDR原股發行股數")
+                                try:
+                                    so_found = float(str(so_str).replace(",", ""))
+                                except Exception:
+                                    so_found = None
+                                break
+                        if so_found:
+                            financial_data_for_stock["shares_outstanding"] = so_found
                     except Exception as e:
                         print(f"[jojo_state_machine] shares_outstanding 多來源補全失敗: {e}")
 

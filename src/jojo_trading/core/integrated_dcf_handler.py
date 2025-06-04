@@ -53,9 +53,8 @@ class IntegratedDCFHandler:
                 "data_quality": "POOR",
                 "validation_issues": len(critical_errors)
             }
-        
-        # Continue with enhanced DCF if validation passes
-        if validation_result.quality_score >= 60:  # Minimum quality threshold
+          # Continue with enhanced DCF if validation passes (降低門檻以增加篩選成功率)
+        if validation_result.quality_score >= 45:  # Lowered quality threshold for better stock coverage
             print(f"  (IntegratedDCFHandler) 🚀 Phase 2: 執行增強版 DCF 估值計算...")
             
             # Prepare enhanced DCF inputs

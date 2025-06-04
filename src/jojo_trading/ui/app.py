@@ -66,17 +66,22 @@ VALUATION → FILTERING → RESULTS_DISPLAY → EXPORT
 # app.py (Streamlit 主應用程式檔案)
 import streamlit as st
 import pandas as pd # Import pandas
-import json
+import sys
+import os
+# 添加專案根目錄到 Python 路徑
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+sys.path.insert(0, project_root)
 
-# 內部模組導入
-from ..core import data_handler  # Import data_handler for enhanced DCF settings
-from ..core.state_machine import JoJoStateMachine, JoJoState, State # 確保 State 也導入了 (原 BaseState)
-from ..utils.i18n import t
-from ..analysis.growth_analyzer import DEFAULT_CRITERIA, evaluate_growth_potential, GrowthCriterion
-from ..config.optimization_config import DCF_OPTIMIZED_CONFIG  # Import optimized DCF configuration
-
+from src.jojo_trading.core import data_handler  # Import data_handler for enhanced DCF settings
+from src.jojo_trading.core.state_machine import JoJoStateMachine, JoJoState, State # 確保 State 也導入了 (原 BaseState)
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
+from modules.i18n import t
+from modules.growth_analyzer import DEFAULT_CRITERIA, evaluate_growth_potential, GrowthCriterion
+from dcf_optimized_config import DCF_OPTIMIZED_CONFIG  # Import optimized DCF configuration
 # 新增：導入台灣市場預設配置和用戶配置管理
-from ..config.taiwan_presets import (
+from src.jojo_trading.config.taiwan_presets import (
     get_all_taiwan_growth_presets, 
     get_all_taiwan_dcf_presets,
     get_all_taiwan_industry_presets,
@@ -84,13 +89,14 @@ from ..config.taiwan_presets import (
     apply_taiwan_dcf_preset,
     apply_taiwan_industry_preset
 )
-from ..config.user_config import (
+from src.jojo_trading.config.user_config import (
     UserConfigManager,
     UserGrowthConfig,
     UserDCFConfig,
     UserIntegratedConfig,
     UserConfigMetadata
 )
+import json
 
 # --- Helper function to drive state machine ---
 def drive_state_machine(machine, target_state=None):
@@ -104,7 +110,7 @@ def drive_state_machine(machine, target_state=None):
     # 獲取當前狀態的處理物件
     # current_state_handler = machine.states.get(machine.current_state) # 假設 machine.states 存在且是字典
     # 直接在狀態機內部處理狀態對應的執行邏輯，app.py 只調用 machine.execute_state() 或 machine.transition_to()
-    # 為了保持現有結構，我們假設 machine.execute_state() 會處理當前狀態的執行
+    # 為了保持現有構造，我們假設 machine.execute_state() 會處理當前狀態的執行
     # 但 drive_state_machine 的設計似乎是外部驅動，這與 JoJoStateMachine 內部的 self.execute_state() 有點衝突
     # 暫時保留 drive_state_machine 的邏輯，但理想情況下應由 JoJoStateMachine 內部管理狀態執行
     
@@ -1600,3 +1606,20 @@ elif machine.current_state == JoJoState.END: # 使用 machine.current_state
 # st.sidebar.write("Context (App):")
 # st.sidebar.json(machine.context, expanded=False)
 # st.sidebar.write("Session State Keys (App):", list(st.session_state.keys()))
+
+def main():
+    """
+    主要執行函數，啟動 DCF 估值分析系統
+    
+    這個函數封裝了整個 Streamlit 應用程式的邏輯，
+    包括狀態機初始化、UI 渲染和狀態流程控制。
+    """
+    # 注意：這裡不需要重複 st.set_page_config，因為在 main_app.py 中已設定
+    
+    # 直接返回，因為整個邏輯已經在模組層級執行
+    # Streamlit 應用的邏輯直接在模組導入時執行
+    pass
+
+if __name__ == "__main__":
+    # 如果直接執行此檔案，啟動 Streamlit 應用
+    main()

@@ -408,11 +408,12 @@ class FinancialDataValidator:
                     level=ValidationLevel.ERROR,
                     field='dcf_rates_relationship',
                     message=f"折現率 ({discount_rate:.2%}) 必須大於永續成長率 ({terminal_growth:.2%})"
-                ))        # 計算 DCF 品質分數
+                ))        # 計算 DCF 品質分數 (優化評分算法，減少過度懲罰)
         error_count = len([issue for issue in result.issues if issue.level == ValidationLevel.ERROR])
         warning_count = len([issue for issue in result.issues if issue.level == ValidationLevel.WARNING])
         
-        result.quality_score = max(0, 100 - error_count * 40 - warning_count * 10)
+        # 降低懲罰力度，提高通過率
+        result.quality_score = max(0, 100 - error_count * 25 - warning_count * 5)
         result.is_valid = error_count == 0
         
         return result
