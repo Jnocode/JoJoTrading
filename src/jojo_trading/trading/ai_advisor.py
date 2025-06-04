@@ -208,8 +208,7 @@ class AITradingAdvisor:
                 confidence=confidence,
                 target_price=target_price,
                 reasoning=reasoning,
-                risk_level=risk_level
-            )
+                risk_level=risk_level            )
         
         return None
     
@@ -217,10 +216,10 @@ class AITradingAdvisor:
         """獲取股票歷史交易績效"""
         trades = self.trade_recorder.get_trades_by_stock(stock_code)
         closed_trades = [t for t in trades if t.realized_pnl is not None]
-        
         if not closed_trades:
             return {'win_rate': 0, 'avg_return': 0, 'trade_count': 0}
-          winning_trades = [t for t in closed_trades if t.realized_pnl is not None and t.realized_pnl > 0]
+        
+        winning_trades = [t for t in closed_trades if t.realized_pnl is not None and t.realized_pnl > 0]
         returns = [t.return_percentage for t in closed_trades if t.return_percentage is not None]
         
         return {

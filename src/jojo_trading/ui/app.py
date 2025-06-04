@@ -79,7 +79,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 from modules.i18n import t
 from modules.growth_analyzer import DEFAULT_CRITERIA, evaluate_growth_potential, GrowthCriterion
-from dcf_optimized_config import DCF_OPTIMIZED_CONFIG  # Import optimized DCF configuration
+from ..config.dcf_optimized_config import DCF_OPTIMIZED_CONFIG  # Import optimized DCF configuration
 # 新增：導入台灣市場預設配置和用戶配置管理
 from src.jojo_trading.config.taiwan_presets import (
     get_all_taiwan_growth_presets, 
@@ -1140,7 +1140,7 @@ if machine.current_state == JoJoState.UI_INIT: # 使用 machine.current_state
         # 如果選擇了預設配置，應用配置
         if selected_config != "自訂設定":
             try:
-                from growth_stock_optimization_config import apply_config_to_context, get_optimized_config
+                from ..config.growth_stock_optimization_config import apply_config_to_context, get_optimized_config
                 config_name = config_options[selected_config]
                 machine.context = apply_config_to_context(machine.context, config_name)
                 
