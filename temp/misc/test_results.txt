@@ -1,4 +1,0 @@
-Traceback (most recent call last):
-  File "D:\AI_Park\Workspace\dev_projects\web\jojo_trading\functionality_test.py", line 73, in <module>
-    print("\U0001f9ea JoJo Trading 功能驗證測試")
-UnicodeEncodeError: 'cp950' codec can't encode character '\U0001f9ea' in position 0: illegal multibyte sequence
