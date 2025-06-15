@@ -1,0 +1,35 @@
+{
+  "timestamp": "20250614_150713",
+  "suite": "quick",
+  "category": null,
+  "total_tests": 4,
+  "passed": 0,
+  "failed": 4,
+  "duration": 0.1469583511352539,
+  "results": [
+    {
+      "test_file": "tests\\smoke\\test_basic_system.py",
+      "status": "failed",
+      "error": "Traceback (most recent call last):\n  File \"D:\\AI_Park\\Workspace\\dev_projects\\web\\jojo_trading\\tests\\smoke\\test_basic_system.py\", line 14, in <module>\n    print(f\"\\U0001f4c2 添加路徑到 PYTHONPATH: {src_path}\")\nUnicodeEncodeError: 'cp950' codec can't encode character '\\U0001f4c2' in position 0: illegal multibyte sequence\n",
+      "duration": 0.03766441345214844
+    },
+    {
+      "test_file": "tests\\smoke\\test_individual_sector_features.py",
+      "status": "failed",
+      "error": "Traceback (most recent call last):\n  File \"D:\\AI_Park\\Workspace\\dev_projects\\web\\jojo_trading\\tests\\smoke\\test_individual_sector_features.py\", line 172, in <module>\n    main()\n  File \"D:\\AI_Park\\Workspace\\dev_projects\\web\\jojo_trading\\tests\\smoke\\test_individual_sector_features.py\", line 136, in main\n    print(\"\\U0001f680 JoJo Trading 個股分析 & 類股篩選功能驗證\")\nUnicodeEncodeError: 'cp950' codec can't encode character '\\U0001f680' in position 0: illegal multibyte sequence\n",
+      "duration": 0.03653144836425781
+    },
+    {
+      "test_file": "tests\\smoke\\test_basic_system.py",
+      "status": "failed",
+      "error": "Traceback (most recent call last):\n  File \"D:\\AI_Park\\Workspace\\dev_projects\\web\\jojo_trading\\tests\\smoke\\test_basic_system.py\", line 14, in <module>\n    print(f\"\\U0001f4c2 添加路徑到 PYTHONPATH: {src_path}\")\nUnicodeEncodeError: 'cp950' codec can't encode character '\\U0001f4c2' in position 0: illegal multibyte sequence\n",
+      "duration": 0.03327202796936035
+    },
+    {
+      "test_file": "tests\\smoke\\test_individual_sector_features.py",
+      "status": "failed",
+      "error": "Traceback (most recent call last):\n  File \"D:\\AI_Park\\Workspace\\dev_projects\\web\\jojo_trading\\tests\\smoke\\test_individual_sector_features.py\", line 172, in <module>\n    main()\n  File \"D:\\AI_Park\\Workspace\\dev_projects\\web\\jojo_trading\\tests\\smoke\\test_individual_sector_features.py\", line 136, in main\n    print(\"\\U0001f680 JoJo Trading 個股分析 & 類股篩選功能驗證\")\nUnicodeEncodeError: 'cp950' codec can't encode character '\\U0001f680' in position 0: illegal multibyte sequence\n",
+      "duration": 0.0339198112487793
+    }
+  ]
+}

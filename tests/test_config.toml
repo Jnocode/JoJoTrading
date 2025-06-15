@@ -1,0 +1,81 @@
+# JoJo Trading 統一測試配置
+# Unified Testing Configuration
+
+[test.suites]
+# 測試套件定義
+
+[test.suites.quick]
+description = "快速測試套件 - 基本功能驗證 (< 30秒)"
+timeout = 30
+categories = ["smoke", "unit"]
+
+[test.suites.standard]
+description = "標準測試套件 - 核心功能完整測試 (< 5分鐘)" 
+timeout = 300
+categories = ["smoke", "unit", "integration"]
+
+[test.suites.full]
+description = "完整測試套件 - 所有功能測試 (< 30分鐘)"
+timeout = 1800
+categories = ["smoke", "unit", "integration", "system", "e2e"]
+
+[test.suites.nightly]
+description = "夜間測試套件 - 包含性能測試 (無時間限制)"
+timeout = 0
+categories = ["smoke", "unit", "integration", "system", "e2e", "performance", "regression"]
+
+[test.categories]
+# 測試分類定義
+
+[test.categories.smoke]
+description = "煙霧測試 - 基本功能快速驗證"
+pattern = "tests/smoke/test_*.py"
+
+[test.categories.unit]
+description = "單元測試 - 個別模組功能測試"
+pattern = "tests/unit/**/test_*.py"
+
+[test.categories.integration]
+description = "整合測試 - 模組間互動測試"
+pattern = "tests/integration/test_*.py"
+
+[test.categories.system]
+description = "系統測試 - 完整系統功能測試"
+pattern = "tests/system/test_*.py"
+
+[test.categories.e2e]
+description = "端到端測試 - 用戶流程完整測試"
+pattern = "tests/e2e/test_*.py"
+
+[test.categories.performance]
+description = "性能測試 - 系統性能與壓力測試"
+pattern = "tests/performance/test_*.py"
+
+[test.categories.regression]
+description = "回歸測試 - 防止功能退化測試"
+pattern = "tests/regression/test_*.py"
+
+[test.reports]
+# 測試報告設定
+output_dir = "tests/reports"
+formats = ["json", "html"]
+retention_days = 30
+
+[test.environment]
+# 測試環境設定
+python_path = "src"
+test_data_dir = "tests/data"
+cache_dir = "tests/cache"
+timeout_default = 300
+
+[test.coverage]
+# 測試覆蓋率設定
+enabled = true
+threshold = 80
+exclude = ["tests/*", "archive/*", "temp/*"]
+
+[test.parallel]
+# 並行測試設定
+enabled = false
+max_workers = 4
+categories_parallel = ["unit", "integration"]

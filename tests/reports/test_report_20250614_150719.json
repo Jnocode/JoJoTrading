@@ -1,0 +1,17 @@
+{
+  "timestamp": "20250614_150719",
+  "suite": null,
+  "category": null,
+  "total_tests": 1,
+  "passed": 0,
+  "failed": 1,
+  "duration": 0.04221820831298828,
+  "results": [
+    {
+      "test_file": "tests\\smoke\\test_basic_system.py",
+      "status": "failed",
+      "error": "Traceback (most recent call last):\n  File \"D:\\AI_Park\\Workspace\\dev_projects\\web\\jojo_trading\\tests\\smoke\\test_basic_system.py\", line 14, in <module>\n    print(f\"\\U0001f4c2 添加路徑到 PYTHONPATH: {src_path}\")\nUnicodeEncodeError: 'cp950' codec can't encode character '\\U0001f4c2' in position 0: illegal multibyte sequence\n",
+      "duration": 0.036631107330322266
+    }
+  ]
+}
