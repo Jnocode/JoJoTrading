@@ -1,0 +1,420 @@
+# 🚀 JoJo Trading Platform
+
+**整合DCF估值分析與智能交易系統的綜合平台**
+
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.45.1-FF6B6B.svg)](https://streamlit.io)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
+[![Version](https://img.shields.io/badge/Version-2.0.0-green.svg)](https://github.com)
+
+## ⚡ 快速啟動
+
+### 🏁 一鍵啟動 (推薦)
+```cmd
+start.bat
+```
+或直接雙擊 `start.bat` 檔案
+
+### ⌨️ 命令列啟動
+```bash
+streamlit run src/jojo_trading/ui/app.py
+```
+
+**瀏覽器會自動開啟：** http://localhost:8501
+
+## 📁 專案結構
+
+經過完整整理後的標準化專案結構：
+
+```
+jojo_trading/
+├── 🚀 main_app.py              # 主要執行檔（唯一入口點）
+├── 📖 README.md                # 專案說明
+├── 🏁 quick_start.bat          # 快速啟動腳本
+├── ⚙️ requirements.txt         # 依賴清單
+├── 🔧 pyproject.toml           # 專案配置
+├── 🧪 pytest.ini              # 測試配置
+│
+├── 📂 src/jojo_trading/        # 核心源碼模組
+│   ├── 🧠 core/               # 核心業務邏輯
+│   ├── ⚙️ config/             # 配置管理
+│   ├── 🎨 ui/                 # 用戶介面
+│   ├── 📈 analysis/           # 分析模組
+│   └── 🔧 utils/              # 工具函數
+│
+├── 🧪 tests/                  # 完整測試套件
+│   ├── unit/                  # 單元測試 (40+ 檔案)
+│   ├── integration/           # 整合測試 (15+ 檔案)
+│   └── performance/           # 性能測試
+│
+├── 📚 docs/                   # 文檔與報告
+│   ├── reports/               # 專案報告 (30+ 檔案)
+│   └── diagrams/              # 架構圖表
+│
+├── 📊 data/                   # 資料目錄
+│   └── raw/                   # 原始資料
+│
+├── 🔨 scripts/               # 腳本工具
+│   ├── deploy/               # 部署腳本
+│   └── utilities/            # 工具腳本
+│
+└── 📦 legacy/                # 舊版檔案歸檔
+```
+
+## 🌟 系統功能
+
+### 四大核心模組
+1. **🏠 系統總覽** - 系統狀態監控與快速導航
+2. **💰 DCF估值分析** - 完整的DCF模型分析系統
+3. **🤖 智能交易系統** - AI交易建議與記錄管理
+4. **⚙️ 系統設定** - 參數配置與個人化設定
+
+### DCF估值分析特色
+- **🔍 數據質量驗證**：智能評估財務數據可靠度（品質門檻45分）
+- **📊 增強型DCF模型**：集成CAPM動態折現率、情景分析與蒙地卡羅模擬
+- **🤖 智能方法選擇**：根據數據質量自動選擇最適合的估值方法
+- **📈 風險量化分析**：提供VaR、標準差等全面風險評估指標
+
+### 智能交易系統特色
+- **📝 交易記錄管理**：完整的買賣記錄與損益追蹤
+- **🤖 AI交易建議**：基於技術分析與基本面的智能建議
+- **📊 信號生成器**：自動化交易信號生成與通知
+- **💡 風險管理**：智能倉位管理與風險控制建議
+
+## 📁 專案結構
+
+```
+jojo_trading/
+├── main_app.py                    # 🚀 主要執行檔（唯一入口）
+├── README.md                      # 專案說明文件
+├── requirements.txt               # Python套件相依清單
+├── .env                          # 環境變數設定
+│
+├── 📂 src/jojo_trading/          # 核心原始碼套件
+│   ├── core/                     # 核心業務邏輯
+│   ├── ui/                       # 用戶介面模組
+│   ├── trading/                  # 智能交易系統
+│   └── utils/                    # 工具函數模組
+│
+├── 📂 config/                    # 系統配置檔案
+├── 📂 data/                      # 資料檔案目錄
+├── 📂 tests/                     # 測試檔案目錄
+└── 📂 docs/                      # 文件與報告目錄
+```
+
+## 🔧 安裝與設定
+
+### 系統需求
+- Python 3.8+
+- Streamlit 1.28+
+- 網路連接（用於資料獲取）
+
+### 安裝步驟
+
+1. **安裝相依套件**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **設定環境變數**（可選）
+   ```bash
+   cp .env.example .env
+   # 編輯 .env 檔案設定API金鑰等
+   ```
+
+3. **啟動應用程式**
+   ```bash
+   streamlit run main_app.py
+   ```
+
+## 🎯 使用指南
+
+### 基本操作
+1. **系統啟動**：執行 `streamlit run main_app.py`
+2. **瀏覽器訪問**：自動開啟 http://localhost:8501
+3. **功能導航**：使用左側選單切換不同功能模組
+4. **參數設定**：在「系統設定」頁面調整個人偏好
+
+### DCF分析流程
+1. 選擇分析標的（個股或產業）
+2. 檢視數據質量評分
+3. 選擇估值模式（標準/增強）
+4. 設定分析參數
+5. 執行DCF計算
+6. 查看結果與風險分析
+7. 匯出分析報告
+
+### 交易系統使用
+1. 建立交易記錄
+2. 查看AI建議分析
+3. 設定交易信號
+4. 追蹤投資組合
+5. 風險管理檢視
+│   │   ├── state_machine.py   # 狀態機流程控制
+│   │   ├── data_handler.py    # 資料處理引擎
+│   │   ├── dcf_calculator.py  # DCF 計算器
+│   │   └── integrated_dcf_handler.py  # 智能DCF整合處理器
+│   ├── config/                # 設定管理模組
+│   │   ├── __init__.py
+│   │   ├── taiwan_presets.py  # 台股預設配置
+│   │   ├── user_config.py     # 用戶配置管理
+│   │   └── optimization_config.py  # 優化參數配置
+│   ├── ui/                    # 用戶介面模組
+│   │   ├── __init__.py
+│   │   └── app.py            # Streamlit 主介面
+│   ├── analysis/              # 分析功能模組
+│   │   ├── __init__.py
+│   │   ├── industry_analysis.py      # 產業分析
+│   │   ├── financial_analysis.py     # 財務分析
+│   │   └── growth_analyzer.py        # 成長分析器
+│   └── utils/                 # 工具模組
+│       ├── __init__.py
+│       ├── data_fetching.py   # 數據獲取工具
+│       ├── data_validator.py  # 數據驗證工具
+│       └── helpers.py         # 輔助工具函數
+├── main.py                    # 主程式入口點
+├── streamlit_app.py           # 優化版Web UI啟動器
+├── start_web.py               # Web UI啟動腳本
+├── pyproject.toml             # 現代化專案配置
+├── Makefile                   # 便利開發指令 (Unix/Linux)
+├── make.ps1                   # 便利開發指令 (Windows PowerShell)
+├── start.bat                  # Windows 啟動腳本
+├── requirements/              # 依賴管理
+│   ├── base.txt              # 基礎依賴
+│   ├── dev.txt               # 開發依賴
+│   ├── test.txt              # 測試依賴
+│   └── prod.txt              # 生產環境依賴
+└── requirements.txt           # 主要依賴文件
+
+## 📊 DCF與成長股邏輯
+
+### Phase 1 增強型 DCF 流程
+1. **數據質量評估**：自動檢測財務數據的一致性、完整性、準確性
+2. **智能方法選擇**：
+   - 高質量數據（≥閾值）→ 增強型 DCF
+   - 低質量數據（<閾值）→ 標準 DCF 備援
+3. **增強型計算特色**：
+   - CAPM 動態折現率調整
+   - 三情景分析（樂觀/基準/悲觀）
+   - 蒙地卡羅模擬（1000次）
+   - VaR 風險評估
+
+## 🛠️ 快速開始
+
+### 系統需求
+- Python 3.11+
+- Windows 10/11, macOS, Linux
+- 8GB RAM 推薦
+
+### 安裝步驟
+
+#### 1. 克隆專案
+```bash
+git clone <repository-url>
+cd jojo_trading
+```
+
+#### 2. 建立虛擬環境
+```bash
+# Windows
+python -m venv .venv
+.venv\Scripts\activate
+
+# macOS/Linux  
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+#### 3. 安裝依賴
+```bash
+# 生產環境
+pip install -r requirements.txt
+
+# 開發環境
+pip install -r requirements/dev.txt
+
+# 使用 Makefile (推薦)
+make install          # Unix/Linux
+# 或
+./make.ps1 install    # Windows PowerShell
+```
+
+### 🚀 啟動應用
+
+#### 方法 1: 主程式入口 (推薦)
+```bash
+# Web UI 模式 (預設)
+python main.py
+
+# CLI 模式
+python main.py --cli
+
+# 顯示版本
+python main.py --version
+```
+
+#### 方法 2: 直接啟動 Streamlit
+```bash
+# 優化版 (推薦)
+streamlit run streamlit_app.py
+
+# 基本版
+streamlit run start_web.py
+```
+
+#### 方法 3: 使用便利腳本
+```bash
+# Windows
+start.bat
+# 或
+start_web.bat
+
+# Unix/Linux/macOS
+make run
+```
+
+### 🎮 使用說明
+
+#### 基本操作流程
+1. **啟動系統**：執行 `python main.py` 或 `streamlit run streamlit_app.py`
+2. **選擇分析範圍**：在側邊欄選擇產業或個股分析
+3. **設定篩選條件**：配置成長股過濾參數（CAGR、ROE、毛利率等）
+4. **配置估值參數**：設定DCF模型參數或使用自動API獲取
+5. **執行分析**：點擊「開始篩選股票」進行分析
+6. **檢視結果**：查看估值結果、風險指標、情景分析
+7. **匯出報告**：下載 CSV/Excel 格式的分析報表
+
+#### 主要功能介紹
+- **多語支援**：中文/英文介面即時切換
+- **智能估值**：系統自動選擇最佳估值方法
+- **風險分析**：VaR、標準差、情景分析
+- **除錯模式**：清除快取、調整API延遲、模擬數據測試
+
+## 📊 DCF與成長股分析邏輯
+
+### 增強型 DCF 流程
+1. **數據質量評估**：自動檢測財務數據的一致性、完整性、準確性
+2. **智能方法選擇**：
+   - 高質量數據（≥閾值）→ 增強型 DCF
+   - 低質量數據（<閾值）→ 標準 DCF 備援
+3. **增強型計算特色**：
+   - CAPM 動態折現率調整
+   - 三情景分析（樂觀/基準/悲觀）
+   - 蒙地卡羅模擬（1000次）
+
+### 成長股篩選邏輯
+- 先過濾成長股（如CAGR>10%、ROE提升等）
+- 取得FCFE現金流、成長率、折現率（無風險利率+風險溢酬）
+- 支援多階段成長率與敏感度分析
+- 非成長股可用其他估值法（如股息折現、PE/PB等）
+
+### 參數來源
+- 無風險利率：台灣10年期公債殖利率（央行/債券資訊網API）
+- 通膨率：主計總處CPI年增率（政府開放資料）
+- 永續成長率：GDP、產業平均或通膨率
+- 風險溢酬：CAPM 模型動態計算
+
+## 🔧 開發工具
+
+### 使用 Makefile / make.ps1
+```bash
+# 安裝依賴
+make install         # Unix/Linux
+./make.ps1 install   # Windows PowerShell
+
+# 啟動開發服務
+make dev             # Unix/Linux  
+./make.ps1 dev       # Windows PowerShell
+
+# 運行測試
+make test            # Unix/Linux
+./make.ps1 test      # Windows PowerShell
+
+# 清理環境
+make clean           # Unix/Linux
+./make.ps1 clean     # Windows PowerShell
+```
+
+## 📋 API 與配置
+
+### 環境變數設定
+建立 `.env` 文件：
+```env
+FINMIND_USER_ID=your_user_id
+FINMIND_PASSWORD=your_password
+DEBUG_MODE=false
+LOG_LEVEL=INFO
+```
+
+### 重要配置文件
+- `src/jojo_trading/config/taiwan_presets.py` - 台股預設參數
+- `src/jojo_trading/config/user_config.py` - 用戶客製化設定
+- `src/jojo_trading/config/optimization_config.py` - 優化參數配置
+
+## 🧪 測試與驗證
+
+### 執行測試套件
+```bash
+# 基本功能測試
+python -m pytest tests/
+
+# 模組導入測試
+python -c "from src.jojo_trading import __version__; print(f'Version: {__version__}')"
+
+# CLI 功能測試
+python main.py --cli
+```
+
+### 常見問題排除
+1. **模組導入錯誤**：確認已啟動虛擬環境且安裝所有依賴
+2. **API 連接失敗**：檢查網路連接和 `.env` 配置
+3. **數據獲取異常**：嘗試清除快取 `rm -rf cache/`
+
+## 🚀 部署建議
+
+### 生產環境部署
+```bash
+# 安裝生產依賴
+pip install -r requirements/prod.txt
+
+# 設定環境變數
+export FINMIND_USER_ID=your_id
+export FINMIND_PASSWORD=your_password
+
+# 啟動服務
+streamlit run streamlit_app.py --server.port 8501
+```
+
+### Docker 部署 (可選)
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+EXPOSE 8501
+CMD ["streamlit", "run", "streamlit_app.py", "--server.port", "8501"]
+```
+
+## 📞 技術支援與貢獻
+
+### 獲取幫助
+- 📖 查看 `docs/` 目錄中的詳細文檔
+- 🐛 報告問題請提交 Issue
+- 💡 功能建議歡迎提交 Pull Request
+
+### 貢獻指南
+1. Fork 專案到您的 GitHub
+2. 建立功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 開啟 Pull Request
+
+## 📄 授權
+
+本專案採用 MIT License - 詳見 [LICENSE](LICENSE) 文件
+
+---
+
+**JoJo Trading v1.0.0 - 基於 DCF 估值的專業台股分析工具** 🚀
+
+*支援智能估值、風險分析、成長股篩選的一站式投資分析平台*

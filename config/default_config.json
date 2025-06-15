@@ -1,0 +1,60 @@
+{
+  "dcf_defaults": {
+    "risk_free_rate": 0.01,
+    "market_risk_premium": 0.06,
+    "terminal_growth_rate": 0.02,
+    "forecast_years": 5,
+    "tax_rate": 0.2,
+    "beta_default": 1.0,
+    "debt_to_equity_ratio": 0.3,
+    "cost_of_debt": 0.03
+  },
+  "screening_defaults": {
+    "min_market_cap": 1000000000,
+    "max_pe_ratio": 25.0,
+    "min_roe": 0.1,
+    "min_revenue_growth": 0.05,
+    "max_debt_ratio": 0.6,
+    "min_current_ratio": 1.2,
+    "sectors_to_include": [
+      "半導體",
+      "電子零組件",
+      "電腦及週邊設備",
+      "通信網路",
+      "電子通路",
+      "軟體服務",
+      "金融保險",
+      "生技醫療",
+      "傳產製造",
+      "民生消費"
+    ]
+  },
+  "ui_config": {
+    "page_title": "JoJo Trading DCF分析",
+    "page_icon": "📊",
+    "layout": "wide",
+    "sidebar_state": "expanded",
+    "primary_color": "#1f77b4",
+    "secondary_color": "#ff7f0e",
+    "success_color": "#2ca02c",
+    "warning_color": "#ff9800",
+    "error_color": "#d62728",
+    "info_color": "#17a2b8"
+  },
+  "data_sources": {
+    "stock_data_provider": "yfinance",
+    "financial_data_provider": "local_cache",
+    "cache_directory": "cache",
+    "data_directory": "data",
+    "export_directory": "export"
+  },
+  "system": {
+    "debug_mode": false,
+    "enable_caching": true,
+    "cache_expiry_hours": 24,
+    "max_concurrent_requests": 5,
+    "request_timeout_seconds": 30,
+    "log_level": "INFO",
+    "enable_performance_monitoring": true
+  }
+}

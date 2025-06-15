@@ -1,7 +1,55 @@
-# 測試依賴
-pytest>=7.4.0
-pytest-cov>=4.1.0
-pytest-mock>=3.11.0
-pytest-asyncio>=0.21.0
-coverage>=7.3.0
-factory-boy>=3.3.0
+# JoJo Trading System - 測試依賴
+# 測試框架和相關工具的依賴套件
+
+# 核心測試框架
+pytest>=7.4.0                    # 主要測試框架
+pytest-cov>=4.1.0               # 測試覆蓋率
+pytest-mock>=3.11.0             # Mock 工具
+pytest-asyncio>=0.21.0          # 異步測試支援
+pytest-html>=3.2.0              # HTML 測試報告
+pytest-xdist>=3.3.0             # 並行測試執行
+
+# 覆蓋率工具
+coverage>=7.3.0                 # 覆蓋率測量
+coverage-badge>=1.1.0           # 覆蓋率徽章生成
+
+# 測試數據和模擬
+factory-boy>=3.3.0              # 測試數據工廠
+Faker>=19.0.0                   # 假數據生成
+responses>=0.23.0               # HTTP 請求模擬
+freezegun>=1.2.0                # 時間模擬
+
+# 性能和負載測試
+pytest-benchmark>=4.0.0         # 性能基準測試
+locust>=2.15.0                  # 負載測試
+
+# 代碼品質檢查
+flake8>=6.0.0                   # 代碼風格檢查
+black>=23.0.0                   # 代碼格式化
+isort>=5.12.0                   # 導入排序
+mypy>=1.5.0                     # 類型檢查
+bandit>=1.7.0                   # 安全性檢查
+
+# 文檔測試
+doctest>=1.0                    # 文檔測試
+
+# 測試數據庫（如果需要）
+pytest-django>=4.5.0           # Django 測試（如果使用）
+pytest-flask>=1.2.0            # Flask 測試（如果使用）
+
+# API 測試
+requests-mock>=1.11.0          # 請求模擬
+httpx>=0.24.0                  # 現代 HTTP 客戶端
+
+# 記憶體和性能分析
+memory-profiler>=0.60.0        # 記憶體分析
+psutil>=5.9.0                  # 系統資源監控
+
+# 測試報告增強
+pytest-sugar>=0.9.7            # 美化測試輸出
+pytest-clarity>=1.0.1          # 改善錯誤信息顯示
+pytest-instafail>=0.4.2        # 即時顯示失敗
+
+# 測試配置
+pytest-env>=0.8.2              # 環境變數管理
+pytest-timeout>=2.1.0          # 測試超時控制

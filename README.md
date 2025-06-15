@@ -6,19 +6,19 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![Version](https://img.shields.io/badge/Version-2.0.0-green.svg)](https://github.com)
 
+> 📚 **新接手開發者必讀**: 請先查看 [`PROJECT_HANDOVER/`](PROJECT_HANDOVER/) 資料夾中的完整交接文檔，包含專案概覽、開發歷史、技術架構、未來規劃等重要資訊。
+
 ## ⚡ 快速啟動
 
-**三種啟動方式：**
+### 🏁 一鍵啟動 (推薦)
+```cmd
+start.bat
+```
+或直接雙擊 `start.bat` 檔案
 
+### ⌨️ 命令列啟動
 ```bash
-# 方法 1: 使用批次檔 (推薦)
-quick_start.bat
-
-# 方法 2: 直接執行
-streamlit run main_app.py
-
-# 方法 3: 檢查系統狀態
-python scripts/utilities/system_check.py
+streamlit run src/jojo_trading/ui/app.py
 ```
 
 **瀏覽器會自動開啟：** http://localhost:8501
@@ -52,7 +52,18 @@ jojo_trading/
 │   ├── reports/               # 專案報告 (30+ 檔案)
 │   └── diagrams/              # 架構圖表
 │
-├── 📊 data/                   # 資料目錄
+├── � PROJECT_HANDOVER/       # 🎯 專案交接文檔 (新接手者必讀)
+│   ├── 01_PROJECT_OVERVIEW/   # 專案概覽與現狀
+│   ├── 02_DEVELOPMENT_HISTORY/# 開發歷史與里程碑
+│   ├── 03_TECHNICAL_DOCS/     # 技術架構與測試
+│   ├── 04_DEVELOPMENT_STANDARDS/# 開發標準與協作指南
+│   ├── 05_DEPLOYMENT_OPERATIONS/# 部署與環境設置
+│   ├── 06_LOGS_REPORTS/       # 系統日誌與分析報告
+│   ├── 07_FUTURE_PLANNING/    # 未來發展規劃
+│   ├── README.md              # 交接文檔入口
+│   └── FAQ.md                 # 常見問題解答 (38+ 問題)
+│
+├── �📊 data/                   # 資料目錄
 │   └── raw/                   # 原始資料
 │
 ├── 🔨 scripts/               # 腳本工具
@@ -399,8 +410,22 @@ CMD ["streamlit", "run", "streamlit_app.py", "--server.port", "8501"]
 
 ## 📞 技術支援與貢獻
 
+### 🎯 專案交接指南
+**新接手開發者必讀**：本專案已建立完整的交接文檔系統，位於 [`PROJECT_HANDOVER/`](PROJECT_HANDOVER/) 資料夾。
+
+#### 快速導覽
+- 📊 [專案現狀總覽](PROJECT_HANDOVER/01_PROJECT_OVERVIEW/PROJECT_STATUS_OVERVIEW.md) - 了解當前專案狀態
+- 🚀 [快速上手指南](PROJECT_HANDOVER/README.md) - 新手入門步驟
+- ❓ [常見問題 FAQ](PROJECT_HANDOVER/FAQ.md) - 38+ 常見問題解答
+- 📋 [行動計劃](PROJECT_HANDOVER/07_FUTURE_PLANNING/NEXT_STEPS_ACTION_PLAN.md) - 立即可執行的任務清單
+
+#### 適用對象
+- 🤖 **AI 接手者**: 參考 [AI 協作指南](PROJECT_HANDOVER/04_DEVELOPMENT_STANDARDS/AI_COLLABORATION_GUIDE.md)
+- 👨‍💻 **人類開發者**: 查看 [技術架構說明](PROJECT_HANDOVER/03_TECHNICAL_DOCS/TECHNICAL_ARCHITECTURE.md)
+- 💼 **產品經理**: 閱讀 [發展路線圖](PROJECT_HANDOVER/07_FUTURE_PLANNING/DEVELOPMENT_ROADMAP.md)
+
 ### 獲取幫助
-- 📖 查看 `docs/` 目錄中的詳細文檔
+- 📖 查看 `PROJECT_HANDOVER/` 中的完整交接文檔
 - 🐛 報告問題請提交 Issue
 - 💡 功能建議歡迎提交 Pull Request
 

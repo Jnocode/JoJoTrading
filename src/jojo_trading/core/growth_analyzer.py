@@ -8,7 +8,7 @@ JoJoTrading 成長股判定優化配置
 
 from dataclasses import dataclass
 from typing import Dict, List
-from modules.growth_analyzer import GrowthCriterion, GrowthCriteriaSet
+from src.jojo_trading.analysis.growth_analyzer import GrowthCriterion, GrowthCriteriaSet
 
 @dataclass
 class OptimizedGrowthConfig:

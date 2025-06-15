@@ -37,7 +37,7 @@ project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.jojo_trading.core import data_handler
-from modules.growth_analyzer import evaluate_growth_potential, GrowthCriterion
+from src.jojo_trading.analysis.growth_analyzer import evaluate_growth_potential, GrowthCriterion
 
 class JoJoState(Enum):
     CONFIG_LOAD = auto()
@@ -131,7 +131,9 @@ class ConfigLoadState(State):
     def execute(self):
         print("Executing ConfigLoadState: 載入設定檔...")
         try:
-            with open('industries.json', 'r', encoding='utf-8') as f:
+            # 修正檔案路徑，使用專案根目錄下的 data 資料夾
+            industries_file = project_root / 'data' / 'industries.json'
+            with open(industries_file, 'r', encoding='utf-8') as f:
                 self.context['industry_data'] = json.load(f)
             print(f"  industries.json 已載入。偵測到產業數量: {len(self.context['industry_data'].get('industries', []))}")
             
@@ -174,10 +176,9 @@ class UiInitState(State):
     def execute(self):
         print("Executing UiInitState: 初始化 Streamlit UI...")
         # This state is primarily for UI setup in app.py
-        # For now, it just transitions. If UI elements trigger state changes,
-        # those will be handled by callbacks in app.py that call machine.transition_to()
-        # self.machine.transition_to(JoJoState.IDLE) # Or to another state if auto-processing
-        print("UiInitState 完成。") # No automatic transition from here, wait for UI interaction
+        # Transition to IDLE to avoid infinite loop in UI
+        self.machine.transition_to(JoJoState.IDLE)
+        print("UiInitState 完成，轉換到 IDLE 狀態等待用戶操作。")
 
 class IndustryProcessState(State):
     def execute(self):
@@ -645,7 +646,6 @@ class IdleState(State):
     def execute(self):
         print("Executing IdleState: 等待操作...")
         # This state represents the idle state, waiting for user action or input
-        # It could also trigger periodic updates or checks
-        # For now, it just transitions to CONFIG_LOAD to demonstrate a cycle
-        self.machine.transition_to(JoJoState.CONFIG_LOAD)
-        print("IdleState 完成。")
+        # Do not auto-transition to avoid infinite loops
+        # User actions in UI will trigger appropriate state transitions
+        print("IdleState: 系統就緒，等待用戶操作。")

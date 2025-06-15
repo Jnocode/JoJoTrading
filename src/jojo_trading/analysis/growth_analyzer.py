@@ -13,7 +13,7 @@ JoJotrading 成長股分析模組
 - evaluate_growth_potential: 評估股票成長潛力
 
 範例用法：
-    from analysis.growth_analyzer import evaluate_growth_potential, GrowthCriterion
+    from src.jojo_trading.analysis.growth_analyzer import evaluate_growth_potential, GrowthCriterion
     
     criteria = [
         GrowthCriterion('revenue_cagr', period_years=3, threshold=0.15),
@@ -39,29 +39,54 @@ class GrowthCriteriaSet:
     criteria: List[GrowthCriterion]
     logic_operator: str = 'AND'  # 'AND' 或 'OR'
 
+# 範例：預設條件組合
+DEFAULT_CRITERIA = [
+    GrowthCriterion(
+        metric_name='revenue_cagr',
+        period_years=3,
+        threshold=0.15,
+        operator='>',
+        label='近3年營收CAGR > 15%'
+    ),
+    GrowthCriterion(
+        metric_name='eps_cagr',
+        period_years=3,
+        threshold=0.15,
+        operator='>',
+        label='近3年EPS CAGR > 15%'
+    ),
+    GrowthCriterion(
+        metric_name='roe',
+        period_years=None,
+        threshold=0.15,
+        operator='>',
+        label='最新一期ROE > 15%'
+    ),
+]
+
+DEFAULT_CRITERIA_SET = GrowthCriteriaSet(
+    criteria=DEFAULT_CRITERIA,
+    logic_operator='AND'
+)
 
 def calculate_cagr(values: List[float], years: int) -> Optional[float]:
     """
-    計算複合年成長率 (CAGR)
-    :param values: 時間序列數值（須按時間順序排列）
-    :param years: 成長年數
-    :return: CAGR 百分比，若數據不足或有無效值回傳 None
+    計算年複合成長率（CAGR）。
+    :param values: 依時間序列由舊到新（如 [2020, 2021, 2022]），至少需兩個數值
+    :param years: 期數（如3年）
+    :return: CAGR 百分比（如0.15代表15%），若資料不足或數值異常則回傳 None
     """
     if not values or len(values) < 2 or years <= 0:
         return None
-    
-    start_value = values[0]
-    end_value = values[-1]
-    
-    if start_value is None or end_value is None or start_value <= 0:
-        return None
-    
     try:
-        cagr = ((end_value / start_value) ** (1 / years)) - 1
+        start = values[0]
+        end = values[-1]
+        if start is None or end is None or start <= 0:
+            return None
+        cagr = (end / start) ** (1 / years) - 1
         return cagr
     except Exception:
         return None
-
 
 def get_revenue_cagr(financial_data: Dict, years: int) -> Optional[float]:
     """
@@ -76,7 +101,6 @@ def get_revenue_cagr(financial_data: Dict, years: int) -> Optional[float]:
     values = revenue_list[-(years+1):]
     return calculate_cagr(values, years)
 
-
 def get_eps_cagr(financial_data: Dict, years: int) -> Optional[float]:
     """
     從財報資料計算近N年EPS CAGR。
@@ -90,7 +114,6 @@ def get_eps_cagr(financial_data: Dict, years: int) -> Optional[float]:
     values = eps_list[-(years+1):]
     return calculate_cagr(values, years)
 
-
 def get_latest_roe(financial_data: Dict) -> Optional[float]:
     """
     取得最新一期ROE。
@@ -101,7 +124,6 @@ def get_latest_roe(financial_data: Dict) -> Optional[float]:
     if not roe_list or len(roe_list) == 0:
         return None
     return roe_list[-1]
-
 
 def get_latest_gross_profit_margin(financial_data: Dict) -> Optional[float]:
     """
@@ -114,7 +136,6 @@ def get_latest_gross_profit_margin(financial_data: Dict) -> Optional[float]:
         return None
     return margin_list[-1]
 
-
 def get_latest_operating_income_margin(financial_data: Dict) -> Optional[float]:
     """
     取得最新一期營業利益率。
@@ -126,7 +147,6 @@ def get_latest_operating_income_margin(financial_data: Dict) -> Optional[float]:
         return None
     return margin_list[-1]
 
-
 def get_latest_net_profit_margin(financial_data: Dict) -> Optional[float]:
     """
     取得最新一期稅後淨利率。
@@ -137,7 +157,6 @@ def get_latest_net_profit_margin(financial_data: Dict) -> Optional[float]:
     if not margin_list or len(margin_list) == 0:
         return None
     return margin_list[-1]
-
 
 def evaluate_growth_potential(
     financial_data: Dict,
@@ -213,44 +232,3 @@ def evaluate_growth_potential(
         "is_growth_stock": is_growth_stock,
         "details": results
     }
-
-
-# 範例：預設條件組合
-DEFAULT_CRITERIA = [
-    GrowthCriterion(
-        metric_name='revenue_cagr',
-        period_years=3,
-        threshold=0.15,
-        operator='>',
-        label='近3年營收CAGR > 15%'
-    ),
-    GrowthCriterion(
-        metric_name='eps_cagr',
-        period_years=3,
-        threshold=0.20,
-        operator='>',
-        label='近3年EPS CAGR > 20%'
-    ),
-    GrowthCriterion(
-        metric_name='roe',
-        threshold=0.12,
-        operator='>',
-        label='最新ROE > 12%'
-    )
-]
-
-
-# 導出列表
-__all__ = [
-    'GrowthCriterion',
-    'GrowthCriteriaSet',
-    'calculate_cagr',
-    'get_revenue_cagr',
-    'get_eps_cagr',
-    'get_latest_roe',
-    'get_latest_gross_profit_margin',
-    'get_latest_operating_income_margin',
-    'get_latest_net_profit_margin',
-    'evaluate_growth_potential',
-    'DEFAULT_CRITERIA'
-]

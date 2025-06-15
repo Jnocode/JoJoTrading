@@ -1,0 +1,30 @@
+{
+  "dcf": {
+    "default_discount_rate": 0.08,
+    "default_growth_rate": 0.08,
+    "default_terminal_growth": 0.03,
+    "default_projection_years": 5,
+    "min_discount_rate": 0.05,
+    "max_discount_rate": 0.15,
+    "min_growth_rate": -0.1,
+    "max_growth_rate": 0.3
+  },
+  "screening": {
+    "default_risk_preference": 0.08,
+    "default_return_threshold": 0.15,
+    "min_return_threshold": 0.05,
+    "max_return_threshold": 0.5,
+    "default_revenue_cagr_threshold": 10.0,
+    "default_eps_cagr_threshold": 15.0,
+    "default_roe_threshold": 15.0
+  },
+  "ui": {
+    "page_title": "JoJo Trading DCF分析系統",
+    "page_icon": "📊",
+    "layout": "wide",
+    "sidebar_state": "expanded"
+  },
+  "debug_mode": false,
+  "cache_enabled": true,
+  "log_level": "INFO"
+}

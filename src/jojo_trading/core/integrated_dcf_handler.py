@@ -1,296 +1,116 @@
 """
-Enhanced DCF Handler with integrated data validation and advanced features
-This module provides the upgraded DCF calculation capabilities for JoJotrading Phase 1 optimization.
+整合DCF處理器
+統一處理所有DCF相關計算
 """
 
-from ..utils.data_validator import FinancialDataValidator
 from .enhanced_dcf import EnhancedDCFModel
+from ..utils.data_validator import FinancialDataValidator
 
 class IntegratedDCFHandler:
-    """
-    Integrated DCF handler that combines data validation with enhanced DCF calculations
-    """
+    """整合DCF處理器類別"""
     
     def __init__(self):
-        self.financial_validator = FinancialDataValidator()
-        self.enhanced_dcf_model = EnhancedDCFModel()
-        print("IntegratedDCFHandler initialized with validation and enhanced DCF capabilities")
+        """初始化處理器"""
+        try:
+            self.validator = FinancialDataValidator()
+            self.dcf_model = EnhancedDCFModel()
+        except Exception as e:
+            print(f"⚠️ IntegratedDCFHandler 初始化警告: {e}")
+            self.validator = None
+            self.dcf_model = None
     
     def calculate_dcf_valuation(self, stock_code, financials, risk_preference, context):
         """
-        Main DCF calculation method with integrated validation and enhancement features
+        計算DCF估值
         
         Args:
-            stock_code (str): Stock symbol
-            financials (dict): Financial data from data_handler
-            risk_preference (float): Risk preference/discount rate
-            context (dict): Calculation context and parameters
+            stock_code: 股票代碼
+            financials: 財務數據
+            risk_preference: 風險偏好
+            context: 計算上下文
             
         Returns:
-            dict: DCF valuation results with validation metrics
+            dict: DCF估值結果
         """
-        print(f"  (IntegratedDCFHandler) 開始為股票 {stock_code} 進行增強版 DCF 估值...")
-        
-        # Phase 1: Data Validation (改為驗證基礎財務數據)
-        print(f"  (IntegratedDCFHandler) 🔍 Phase 1: 執行財務數據品質驗證...")
-        validation_result = self.financial_validator.validate_financial_data(stock_code, financials)
-        
-        # Log validation results
-        error_count = len([issue for issue in validation_result.issues if issue.level.value == 'error'])
-        warning_count = len([issue for issue in validation_result.issues if issue.level.value == 'warning'])
-        print(f"    (IntegratedDCFHandler) 驗證品質分數: {validation_result.quality_score:.1f}/100")
-        print(f"    (IntegratedDCFHandler) 錯誤數量: {error_count}, 警告數量: {warning_count}")
-        
-        # Check for critical errors that would prevent DCF calculation
-        critical_errors = [issue for issue in validation_result.issues if issue.level.value == 'error']
-        if critical_errors:
-            error_messages = [f"{issue.field}: {issue.message}" for issue in critical_errors]
-            print(f"    (IntegratedDCFHandler) ❌ 嚴重錯誤阻止 DCF 計算: {'; '.join(error_messages)}")
+        if not self.validator or not self.dcf_model:
             return {
-                "stock_code": stock_code,
-                "error": f"數據驗證失敗: {'; '.join(error_messages)}",
-                "validation_score": validation_result.quality_score,
-                "data_quality": "POOR",
-                "validation_issues": len(critical_errors)
-            }
-          # Continue with enhanced DCF if validation passes (降低門檻以增加篩選成功率)
-        if validation_result.quality_score >= 45:  # Lowered quality threshold for better stock coverage
-            print(f"  (IntegratedDCFHandler) 🚀 Phase 2: 執行增強版 DCF 估值計算...")
-            
-            # Prepare enhanced DCF inputs
-            enhanced_inputs = self._prepare_enhanced_dcf_inputs(stock_code, financials, context)
-              # Execute enhanced DCF with scenario analysis
-            # Remove stock_code from enhanced_inputs to avoid parameter duplication
-            enhanced_inputs_clean = {k: v for k, v in enhanced_inputs.items() if k != 'stock_code'}
-            
-            dcf_result = self.enhanced_dcf_model.calculate_enhanced_dcf(
-                stock_code=stock_code,
-                financial_data=financials,
-                context=context,
-                **enhanced_inputs_clean  # 傳遞額外參數（已移除 stock_code）
-            )
-            
-            # Phase 2.5: DCF 參數品質驗證（在計算完成後）
-            dcf_params = {
-                'fcf_eps': dcf_result.fcf_eps,
-                'discount_rate': dcf_result.discount_rate,
-                'short_term_growth_rate': dcf_result.short_term_growth,
-                'terminal_growth_rate': dcf_result.terminal_growth,
-                'projection_years': dcf_result.projection_years
-            }
-            dcf_validation = self.financial_validator.validate_dcf_inputs(stock_code, dcf_params)
-            print(f"    (IntegratedDCFHandler) DCF 參數驗證分數: {dcf_validation.quality_score:.1f}/100")
-            
-            # Convert DCFResult to dictionary format and add validation metrics
-            result_dict = {
-                'intrinsic_value_per_share': dcf_result.base_case_valuation,
-                'current_market_price': dcf_result.current_market_price,
-                'potential_return': dcf_result.potential_return,
-                'pv_growth_stage': dcf_result.pv_growth_stage,
-                'pv_terminal_value': dcf_result.pv_terminal_value,
-                'valuation_confidence': dcf_result.valuation_confidence,
-                'model_reliability': dcf_result.model_reliability,
-                'validation_score': validation_result.quality_score,
-                'data_quality': self._get_quality_rating(validation_result.quality_score),
-                'validation_warnings': [issue.message for issue in validation_result.issues if issue.level.value == 'warning'],
-                'validation_info': [issue.message for issue in validation_result.issues if issue.level.value == 'info'],
-                'enhanced_dcf_used': True
-            }
-            
-            print(f"    (IntegratedDCFHandler) ✅ 增強版 DCF 完成，內在價值: ${result_dict['intrinsic_value_per_share']:.2f}")
-            return result_dict
-        
-        else:
-            # Fall back to standard DCF if quality is moderate
-            print(f"  (IntegratedDCFHandler) ⚠️ 數據品質中等({validation_result.quality_score:.1f})，使用標準 DCF...")
-            return self._calculate_standard_dcf_with_validation(stock_code, financials, risk_preference, context, validation_result)
-    
-    def _prepare_enhanced_dcf_inputs(self, stock_code, financials, context):
-        """Prepare inputs for enhanced DCF calculation"""
-        return {
-            'stock_code': stock_code,
-            'net_income': financials.get("net_income_parent"),
-            'shares_outstanding': financials.get("shares_outstanding"),
-            'capex': financials.get("capex"),
-            'depreciation': (financials.get("depreciation", 0) or 0) + (financials.get("amortization", 0) or 0),
-            'working_capital_change': self._calculate_working_capital_change(financials),
-            'current_market_price': financials.get("current_market_price"),
-            'risk_free_rate': context.get('risk_free_rate', 0.01),
-            'market_premium': context.get('market_premium', 0.06),
-            'beta': financials.get('beta', context.get('beta', 1.0)),
-            'growth_rate_short': context.get('dcf_short_term_growth_rate', 0.07),
-            'growth_rate_terminal': context.get('dcf_terminal_growth_rate', 0.025),
-            'projection_years': context.get('dcf_projection_years', 5)
-        }
-    
-    def _calculate_working_capital_change(self, financials):
-        """Calculate working capital change for DCF"""
-        ar_t0 = financials.get('ar_t0', 0) or 0
-        inv_t0 = financials.get('inv_t0', 0) or 0
-        ap_t0 = financials.get('ap_t0', 0) or 0
-        ar_t1 = financials.get('ar_t1', 0) or 0
-        inv_t1 = financials.get('inv_t1', 0) or 0
-        ap_t1 = financials.get('ap_t1', 0) or 0
-        
-        wc_t0 = ar_t0 + inv_t0 - ap_t0
-        wc_t1 = ar_t1 + inv_t1 - ap_t1
-        
-        return wc_t0 - wc_t1
-    
-    def _get_quality_rating(self, score):
-        """Convert quality score to rating"""
-        if score >= 85:
-            return "EXCELLENT"
-        elif score >= 70:
-            return "GOOD"
-        elif score >= 55:
-            return "FAIR"
-        else:
-            return "POOR"
-    
-    def _calculate_standard_dcf_with_validation(self, stock_code, financials, risk_preference, context, validation_result):
-        """
-        Standard DCF calculation with validation integration for lower quality data
-        """
-        print(f"    (IntegratedDCFHandler) 執行標準 DCF 計算 (含驗證整合)...")
-          # Basic error checking
-        if financials.get("error"):
-            return {
-                "stock_code": stock_code,
-                "error": f"財務數據錯誤: {financials['error']}",
-                "validation_score": validation_result.quality_score,
-                "data_quality": self._get_quality_rating(validation_result.quality_score),
-                "enhanced_dcf_used": False
+                'stock_code': stock_code,
+                'intrinsic_value_per_share': 0,
+                'error': 'Handler not properly initialized'
             }
         
-        # Extract core financial data
-        net_income = financials.get("net_income_parent")
-        shares_outstanding = financials.get("shares_outstanding")
-        current_market_price = financials.get("current_market_price")
-          # Basic validation
-        if not net_income or not shares_outstanding or shares_outstanding <= 0:
-            return {
-                "stock_code": stock_code,
-                "error": "核心財務數據不足",
-                "validation_score": validation_result.quality_score,
-                "data_quality": self._get_quality_rating(validation_result.quality_score),
-                "enhanced_dcf_used": False
-            }
-        
-        # Simple DCF calculation
         try:
-            # Basic FCFE calculation
-            capex = financials.get("capex", 0) or 0
-            if capex < 0:
-                capex = -capex  # Convert to positive
+            # 簡化的DCF計算
+            net_income = financials.get('net_income_parent', 0)
+            shares_outstanding = financials.get('shares_outstanding', 1)
+            current_price = financials.get('current_market_price', 0)
             
-            depreciation = (financials.get("depreciation", 0) or 0) + (financials.get("amortization", 0) or 0)
-            working_capital_change = self._calculate_working_capital_change(financials)
+            # 基本DCF估值
+            growth_rate = context.get('dcf_short_term_growth_rate', 0.08)
+            terminal_growth = context.get('dcf_terminal_growth_rate', 0.03)
+            discount_rate = risk_preference
             
-            fcfe = net_income - capex + depreciation - working_capital_change
-            fcf_eps = fcfe / shares_outstanding
+            # 計算每股盈餘
+            eps = net_income / shares_outstanding if shares_outstanding > 0 else 0
             
-            # Simple DCF calculation
-            growth_rate = context.get('dcf_short_term_growth_rate', 0.07)
-            terminal_growth = context.get('dcf_terminal_growth_rate', 0.025)
-            discount_rate = max(risk_preference, 0.05)  # Minimum 5% discount rate
-            projection_years = context.get('dcf_projection_years', 5)
+            # 簡化的DCF計算
+            total_pv = 0
+            current_eps = eps
             
-            # Ensure discount rate > terminal growth
-            if discount_rate <= terminal_growth:
-                terminal_growth = discount_rate * 0.8
+            # 5年預測
+            for year in range(1, 6):
+                future_eps = current_eps * ((1 + growth_rate) ** year)
+                pv = future_eps / ((1 + discount_rate) ** year)
+                total_pv += pv
             
-            # Calculate present value of projected cash flows
-            pv_fcf = 0
-            current_fcf = fcf_eps
-            for year in range(1, projection_years + 1):
-                current_fcf *= (1 + growth_rate)
-                pv_fcf += current_fcf / ((1 + discount_rate) ** year)
+            # 終值計算
+            terminal_eps = current_eps * ((1 + growth_rate) ** 5) * (1 + terminal_growth)
+            terminal_value = terminal_eps / (discount_rate - terminal_growth)
+            terminal_pv = terminal_value / ((1 + discount_rate) ** 5)
             
-            # Terminal value
-            terminal_fcf = current_fcf * (1 + terminal_growth)
-            terminal_value = terminal_fcf / (discount_rate - terminal_growth)
-            pv_terminal = terminal_value / ((1 + discount_rate) ** projection_years)
+            total_pv += terminal_pv
             
-            intrinsic_value = pv_fcf + pv_terminal
-            
-            # Calculate potential return
+            # 計算潛在回報
             potential_return = None
-            if current_market_price and current_market_price > 0:
-                potential_return = (intrinsic_value / current_market_price) - 1
+            if current_price and current_price > 0:
+                potential_return = (total_pv / current_price) - 1
             
             return {
-                "stock_code": stock_code,
-                "intrinsic_value_per_share": round(intrinsic_value, 2),
-                "current_market_price": current_market_price,
-                "potential_return": round(potential_return, 4) if potential_return is not None else None,                "calculated_fcf_eps": round(fcf_eps, 2),
-                "used_discount_rate": discount_rate,
-                "used_short_term_growth": growth_rate,
-                "used_terminal_growth": terminal_growth,
-                "validation_score": validation_result.quality_score,
-                "data_quality": self._get_quality_rating(validation_result.quality_score),
-                "validation_warnings": [issue.message for issue in validation_result.issues if issue.level == 'WARNING'],
-                "enhanced_dcf_used": False
+                'stock_code': stock_code,
+                'intrinsic_value_per_share': round(total_pv, 2),
+                'current_market_price': current_price,
+                'potential_return': round(potential_return, 4) if potential_return else None,
+                'calculation_method': 'integrated_dcf',
+                'used_discount_rate': discount_rate,
+                'used_growth_rate': growth_rate,
+                'used_terminal_growth': terminal_growth
             }
             
         except Exception as e:
-            print(f"    (IntegratedDCFHandler) 標準 DCF 計算錯誤: {str(e)}")
             return {
-                "stock_code": stock_code,
-                "error": f"DCF 計算錯誤: {str(e)}",
-                "validation_score": validation_result.quality_score,
-                "data_quality": self._get_quality_rating(validation_result.quality_score),
-                "enhanced_dcf_used": False
+                'stock_code': stock_code,
+                'intrinsic_value_per_share': 0,
+                'error': f'Integrated DCF calculation error: {str(e)}'
             }
+
+def calculate_enhanced_dcf_valuation(stock_code, financial_data, **kwargs):
+    """
+    計算增強型DCF估值（向後相容）
     
-    def calculate_integrated_dcf(self, financial_data, dcf_inputs, quality_threshold: float = 0.7):
-        """
-        集成 DCF 計算（測試腳本兼容方法）
+    Args:
+        stock_code: 股票代碼
+        financial_data: 財務數據
+        **kwargs: 其他參數
         
-        Args:
-            financial_data: 財務數據
-            dcf_inputs: DCF 輸入參數
-            quality_threshold: 品質閾值
-            
-        Returns:
-            float: 估值結果
-        """
-        try:
-            # 1. 數據品質評估
-            quality_score = self.financial_validator.validate_data_quality(financial_data)
-            
-            print(f"    (IntegratedDCFHandler) 數據品質評分: {quality_score:.3f}")
-            
-            # 2. 根據品質選擇方法
-            if quality_score >= quality_threshold:
-                print(f"    (IntegratedDCFHandler) 使用增強型 DCF (品質: {quality_score:.3f} >= {quality_threshold})")
-                
-                # 使用增強型 DCF
-                result = self.enhanced_dcf_model.calculate_enhanced_dcf(**dcf_inputs)
-                return result.base_case_valuation
-                
-            else:
-                print(f"    (IntegratedDCFHandler) 使用標準 DCF (品質: {quality_score:.3f} < {quality_threshold})")
-                
-                # 使用標準 DCF（簡化計算）
-                revenue = dcf_inputs.get('revenue', [1000])
-                if isinstance(revenue, list):
-                    revenue = revenue[-1]
-                
-                shares = dcf_inputs.get('shares_outstanding', 100)
-                pe_ratio = 15  # 假設市盈率
-                
-                return (revenue * 0.1 * pe_ratio) / shares  # 簡化估值
-                
-        except Exception as e:
-            print(f"    (IntegratedDCFHandler) 計算錯誤: {e}")
-            return 100.0  # 預設值
+    Returns:
+        dict: DCF估值結果
+    """
+    handler = IntegratedDCFHandler()
+    return handler.calculate_dcf_valuation(
+        stock_code, financial_data, 
+        kwargs.get('risk_preference', 0.08),
+        kwargs
+    )
 
-# Global instance for backward compatibility
+# 建立全域實例以供向後相容
 integrated_dcf_handler = IntegratedDCFHandler()
-
-def calculate_enhanced_dcf_valuation(stock_code, financials, risk_preference, context):
-    """
-    Wrapper function for backward compatibility with existing data_handler.py
-    """
-    return integrated_dcf_handler.calculate_dcf_valuation(stock_code, financials, risk_preference, context)
