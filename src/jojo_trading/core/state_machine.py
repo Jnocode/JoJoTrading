@@ -649,3 +649,28 @@ class IdleState(State):
         # Do not auto-transition to avoid infinite loops
         # User actions in UI will trigger appropriate state transitions
         print("IdleState: 系統就緒，等待用戶操作。")
+
+
+class MachineContext:
+    """狀態機上下文類 - 向後兼容性"""
+    
+    def __init__(self):
+        self.state = "idle"
+        self.data = {}
+        self.config = {}
+    
+    def set_state(self, new_state):
+        """設置新狀態"""
+        self.state = new_state
+    
+    def get_state(self):
+        """獲取當前狀態"""
+        return self.state
+    
+    def set_data(self, key, value):
+        """設置數據"""
+        self.data[key] = value
+    
+    def get_data(self, key, default=None):
+        """獲取數據"""
+        return self.data.get(key, default)

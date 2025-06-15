@@ -44,11 +44,17 @@ class IntegratedDCFHandler:
             net_income = financials.get('net_income_parent', 0)
             shares_outstanding = financials.get('shares_outstanding', 1)
             current_price = financials.get('current_market_price', 0)
-            
-            # 基本DCF估值
+              # 基本DCF估值
             growth_rate = context.get('dcf_short_term_growth_rate', 0.08)
             terminal_growth = context.get('dcf_terminal_growth_rate', 0.03)
-            discount_rate = risk_preference
+            
+            # 根據風險偏好設定折現率
+            risk_rates = {
+                'conservative': 0.12,  # 保守：12%
+                'moderate': 0.10,      # 中等：10%
+                'aggressive': 0.08     # 積極：8%
+            }
+            discount_rate = risk_rates.get(risk_preference, 0.10)  # 預設為中等風險
             
             # 計算每股盈餘
             eps = net_income / shares_outstanding if shares_outstanding > 0 else 0

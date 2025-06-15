@@ -6,16 +6,23 @@ DCF 負值修正驗證腳本
 """
 
 import sys
+from pathlib import Path
+
+# 添加 src 路徑到 Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root / "src"))
+
+import sys
 import os
 
 # 添加專案目錄到路徑
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from data_handler import get_stock_data, calculate_dcf_valuation
-    from modules.enhanced_dcf import calculate_enhanced_dcf_valuation
-    from modules.data_validator import validate_data_for_dcf
-    from modules.integrated_dcf_handler import IntegratedDCFHandler
+    from jojo_trading.core.data_handler import get_stock_data, calculate_dcf_valuation
+    from jojo_trading.core.enhanced_dcf import calculate_enhanced_dcf_valuation
+    from jojo_trading.utils.data_validator import validate_data_for_dcf
+    from jojo_trading.core.integrated_dcf_handler import IntegratedDCFHandler
     import pandas as pd
     import datetime
 except ImportError as e:

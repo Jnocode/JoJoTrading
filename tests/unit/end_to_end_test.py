@@ -14,16 +14,23 @@ JoJotrading 完整功能測試腳本
 """
 
 import sys
+from pathlib import Path
+
+# 添加 src 路徑到 Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root / "src"))
+
+import sys
 import traceback
 from datetime import datetime
 import pandas as pd
 
 # JoJotrading 模組
-from jojo_state_machine import JoJoStateMachine, JoJoState
-from modules.data_validator import FinancialDataValidator
-from modules.enhanced_dcf import EnhancedDCFModel
-from modules.integrated_dcf_handler import IntegratedDCFHandler
-import data_handler
+from jojo_trading.core.state_machine import JoJoStateMachine, JoJoState
+from jojo_trading.utils.data_validator import FinancialDataValidator
+from jojo_trading.core.enhanced_dcf import EnhancedDCFModel
+from jojo_trading.core.integrated_dcf_handler import IntegratedDCFHandler
+from jojo_trading.core.data_handler import DataHandler
 
 def test_system_initialization():
     """測試系統初始化"""
@@ -184,8 +191,8 @@ def test_configuration_flexibility():
             print(f"\n配置 {i}: {config}")
             
             # 暫時設置配置
-            original_use_enhanced = data_handler.USE_ENHANCED_DCF
-            data_handler.USE_ENHANCED_DCF = config["use_enhanced_dcf"]
+            original_use_enhanced = DataHandler().USE_ENHANCED_DCF
+            DataHandler().USE_ENHANCED_DCF = config["use_enhanced_dcf"]
             
             try:
                 handler = IntegratedDCFHandler()
@@ -194,7 +201,7 @@ def test_configuration_flexibility():
                 
             finally:
                 # 恢復原始配置
-                data_handler.USE_ENHANCED_DCF = original_use_enhanced
+                DataHandler().USE_ENHANCED_DCF = original_use_enhanced
         
         print("✓ 所有配置測試通過")
         return True

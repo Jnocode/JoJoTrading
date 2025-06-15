@@ -5,6 +5,13 @@
 """
 
 import sys
+from pathlib import Path
+
+# 添加 src 路徑到 Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root / "src"))
+
+import sys
 import traceback
 from datetime import datetime
 
@@ -85,7 +92,7 @@ def test_dcf_functionality():
     print("=" * 30)
     
     try:
-        from data_handler import main as data_main
+        from jojo_trading.core.data_handler import main as data_main
         print("✅ data_handler.py 導入成功")
         
         # 測試基本配置

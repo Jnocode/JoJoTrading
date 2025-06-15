@@ -5,6 +5,13 @@ DCF篩選效果驗證腳本
 """
 
 import sys
+from pathlib import Path
+
+# 添加 src 路徑到 Python path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root / "src"))
+
+import sys
 import os
 sys.path.append('.')
 
@@ -15,7 +22,7 @@ def test_dcf_filtering():
     
     try:
         # 導入必要模組
-        from data_handler import main as data_main
+        from jojo_trading.core.data_handler import main as data_main
         from src.jojo_trading.core.integrated_dcf_handler import IntegratedDCFHandler
         from src.jojo_trading.utils.config_loader import ConfigLoader
         
