@@ -88,9 +88,6 @@ output.txt
 *.svg
 *.mmd
 
-# Virtual environments
-.venv_new/
-
 # Additional data files
 industries.json
 折現估值計算表.xlsx
