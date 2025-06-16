@@ -20,13 +20,12 @@ class MultipleValuationCalculator:
             'pe': self._calculate_pe_valuation,
             'pb': self._calculate_pb_valuation,
             'ev_ebitda': self._calculate_ev_ebitda_valuation,
-            'dividend_yield': self._calculate_dividend_valuation
-        }
+            'dividend_yield': self._calculate_dividend_valuation        }
     
     def calculate_all_valuations(
         self, 
         stock_data: Dict[str, Any],
-        market_data: Dict[str, Any] = None
+        market_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         計算所有估值方法的結果
@@ -59,13 +58,12 @@ class MultipleValuationCalculator:
         
         # 計算加權平均估值
         results['consensus'] = self._calculate_consensus_valuation(results, current_price)
-        
         return results
     
     def _calculate_dcf_valuation(
         self, 
         stock_data: Dict[str, Any], 
-        market_data: Dict[str, Any] = None
+        market_data: Optional[Dict[str, Any]] = None
     ) -> float:
         """計算DCF估值"""
         try:
@@ -96,11 +94,10 @@ class MultipleValuationCalculator:
         except Exception as e:
             print(f"DCF計算錯誤: {e}")
             return 0
-    
     def _calculate_pe_valuation(
         self, 
         stock_data: Dict[str, Any], 
-        market_data: Dict[str, Any] = None
+        market_data: Optional[Dict[str, Any]] = None
     ) -> float:
         """計算PE估值"""
         try:
@@ -131,11 +128,10 @@ class MultipleValuationCalculator:
         except Exception as e:
             print(f"PE估值計算錯誤: {e}")
             return 0
-    
     def _calculate_pb_valuation(
         self, 
         stock_data: Dict[str, Any], 
-        market_data: Dict[str, Any] = None
+        market_data: Optional[Dict[str, Any]] = None
     ) -> float:
         """計算PB估值"""
         try:
@@ -165,11 +161,10 @@ class MultipleValuationCalculator:
         except Exception as e:
             print(f"PB估值計算錯誤: {e}")
             return 0
-    
     def _calculate_ev_ebitda_valuation(
         self, 
         stock_data: Dict[str, Any], 
-        market_data: Dict[str, Any] = None
+        market_data: Optional[Dict[str, Any]] = None
     ) -> float:
         """計算EV/EBITDA估值"""
         try:
@@ -198,11 +193,10 @@ class MultipleValuationCalculator:
         except Exception as e:
             print(f"EV/EBITDA估值計算錯誤: {e}")
             return 0
-    
     def _calculate_dividend_valuation(
         self, 
         stock_data: Dict[str, Any], 
-        market_data: Dict[str, Any] = None
+        market_data: Optional[Dict[str, Any]] = None
     ) -> float:
         """計算股利折現估值（適用於高股息股票）"""
         try:
@@ -322,10 +316,9 @@ class InvestmentAdviser:
             'strong_sell': {'upside': -0.15, 'confidence': 0.6}
         }
     
-    def generate_recommendation(
-        self, 
+    def generate_recommendation(        self, 
         valuation_results: Dict[str, Any],
-        risk_assessment: Dict[str, Any] = None
+        risk_assessment: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         生成投資建議

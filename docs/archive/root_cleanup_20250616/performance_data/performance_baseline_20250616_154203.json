@@ -1,0 +1,179 @@
+{
+  "dcf_performance": {
+    "single_calculation": {
+      "execution_time": 0.0,
+      "memory_before_mb": 79.0078125,
+      "memory_after_mb": 79.0078125,
+      "memory_used_mb": 0.0,
+      "success": false,
+      "error": "EnhancedDCFModel.calculate_dcf_value() got an unexpected keyword argument 'terminal_growth_rate'",
+      "result": null
+    },
+    "batch_calculation": {
+      "total_time": 0.0,
+      "average_time": 0.0,
+      "results": [
+        {
+          "execution_time": 0.0,
+          "memory_before_mb": 79.0078125,
+          "memory_after_mb": 79.0078125,
+          "memory_used_mb": 0.0,
+          "success": false,
+          "error": "EnhancedDCFModel.calculate_dcf_value() got an unexpected keyword argument 'terminal_growth_rate'",
+          "result": null
+        },
+        {
+          "execution_time": 0.0,
+          "memory_before_mb": 79.0078125,
+          "memory_after_mb": 79.0078125,
+          "memory_used_mb": 0.0,
+          "success": false,
+          "error": "EnhancedDCFModel.calculate_dcf_value() got an unexpected keyword argument 'terminal_growth_rate'",
+          "result": null
+        },
+        {
+          "execution_time": 0.0,
+          "memory_before_mb": 79.0078125,
+          "memory_after_mb": 79.0078125,
+          "memory_used_mb": 0.0,
+          "success": false,
+          "error": "EnhancedDCFModel.calculate_dcf_value() got an unexpected keyword argument 'terminal_growth_rate'",
+          "result": null
+        },
+        {
+          "execution_time": 0.0,
+          "memory_before_mb": 79.0078125,
+          "memory_after_mb": 79.0078125,
+          "memory_used_mb": 0.0,
+          "success": false,
+          "error": "EnhancedDCFModel.calculate_dcf_value() got an unexpected keyword argument 'terminal_growth_rate'",
+          "result": null
+        },
+        {
+          "execution_time": 0.0,
+          "memory_before_mb": 79.01171875,
+          "memory_after_mb": 79.01171875,
+          "memory_used_mb": 0.0,
+          "success": false,
+          "error": "EnhancedDCFModel.calculate_dcf_value() got an unexpected keyword argument 'terminal_growth_rate'",
+          "result": null
+        },
+        {
+          "execution_time": 0.0,
+          "memory_before_mb": 79.01171875,
+          "memory_after_mb": 79.01171875,
+          "memory_used_mb": 0.0,
+          "success": false,
+          "error": "EnhancedDCFModel.calculate_dcf_value() got an unexpected keyword argument 'terminal_growth_rate'",
+          "result": null
+        },
+        {
+          "execution_time": 0.0,
+          "memory_before_mb": 79.015625,
+          "memory_after_mb": 79.015625,
+          "memory_used_mb": 0.0,
+          "success": false,
+          "error": "EnhancedDCFModel.calculate_dcf_value() got an unexpected keyword argument 'terminal_growth_rate'",
+          "result": null
+        },
+        {
+          "execution_time": 0.0,
+          "memory_before_mb": 79.015625,
+          "memory_after_mb": 79.015625,
+          "memory_used_mb": 0.0,
+          "success": false,
+          "error": "EnhancedDCFModel.calculate_dcf_value() got an unexpected keyword argument 'terminal_growth_rate'",
+          "result": null
+        },
+        {
+          "execution_time": 0.0,
+          "memory_before_mb": 79.015625,
+          "memory_after_mb": 79.015625,
+          "memory_used_mb": 0.0,
+          "success": false,
+          "error": "EnhancedDCFModel.calculate_dcf_value() got an unexpected keyword argument 'terminal_growth_rate'",
+          "result": null
+        },
+        {
+          "execution_time": 0.0,
+          "memory_before_mb": 79.015625,
+          "memory_after_mb": 79.015625,
+          "memory_used_mb": 0.0,
+          "success": false,
+          "error": "EnhancedDCFModel.calculate_dcf_value() got an unexpected keyword argument 'terminal_growth_rate'",
+          "result": null
+        }
+      ]
+    }
+  },
+  "data_performance": {
+    "basic_data_load": {
+      "execution_time": 0.0,
+      "memory_before_mb": 107.875,
+      "memory_after_mb": 107.875,
+      "memory_used_mb": 0.0,
+      "success": true,
+      "error": null,
+      "result": {
+        "stock_code": "2330",
+        "company_name": "Company 2330",
+        "market": "TSE",
+        "status": "active"
+      }
+    }
+  },
+  "import_performance": {
+    "jojo_trading.core.enhanced_dcf": {
+      "execution_time": 0.0,
+      "memory_before_mb": 107.875,
+      "memory_after_mb": 107.875,
+      "memory_used_mb": 0.0,
+      "success": true,
+      "error": null,
+      "result": "<module 'jojo_trading.core.enhanced_dcf' from 'D:\\\\AI_Park\\\\Workspace\\\\dev_projects\\\\web\\\\jojo_trading\\\\src\\\\jojo_trading\\\\core\\\\enhanced_dcf.py'>"
+    },
+    "jojo_trading.core.data_handler": {
+      "execution_time": 0.0,
+      "memory_before_mb": 107.875,
+      "memory_after_mb": 107.875,
+      "memory_used_mb": 0.0,
+      "success": true,
+      "error": null,
+      "result": "<module 'jojo_trading.core.data_handler' from 'D:\\\\AI_Park\\\\Workspace\\\\dev_projects\\\\web\\\\jojo_trading\\\\src\\\\jojo_trading\\\\core\\\\data_handler.py'>"
+    },
+    "jojo_trading.utils.data_validator": {
+      "execution_time": 0.0,
+      "memory_before_mb": 107.875,
+      "memory_after_mb": 107.875,
+      "memory_used_mb": 0.0,
+      "success": true,
+      "error": null,
+      "result": "<module 'jojo_trading.utils.data_validator' from 'D:\\\\AI_Park\\\\Workspace\\\\dev_projects\\\\web\\\\jojo_trading\\\\src\\\\jojo_trading\\\\utils\\\\data_validator.py'>"
+    },
+    "jojo_trading.config.default_config": {
+      "execution_time": 0.00504612922668457,
+      "memory_before_mb": 107.875,
+      "memory_after_mb": 107.94140625,
+      "memory_used_mb": 0.06640625,
+      "success": true,
+      "error": null,
+      "result": "<module 'jojo_trading.config.default_config' from 'D:\\\\AI_Park\\\\Workspace\\\\dev_projects\\\\web\\\\jojo_trading\\\\src\\\\jojo_trading\\\\config\\\\default_config.py'>"
+    }
+  },
+  "streamlit_performance": {
+    "streamlit_components": {
+      "execution_time": 0.0,
+      "memory_before_mb": 123.9765625,
+      "memory_after_mb": 124.09375,
+      "memory_used_mb": 0.1171875,
+      "success": true,
+      "error": null,
+      "result": {
+        "title": "JoJo Trading System",
+        "sidebar": true,
+        "dataframe": "   test\n0     1\n1     2\n2     3",
+        "chart": true
+      }
+    }
+  }
+}

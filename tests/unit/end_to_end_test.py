@@ -72,38 +72,34 @@ def test_data_processing():
             'shares_outstanding': [100, 100, 100, 100, 100],
             'free_cash_flow': [180, 190, 200, 210, 220]
         })
-        
-        # 測試數據驗證
+          # 測試數據驗證
         validator = FinancialDataValidator()
-        quality_score = validator.validate_data_quality(test_financial_data)
-        print(f"✓ 數據品質驗證: {quality_score:.3f}")
-        
-        # 測試 DCF 參數
+        quality_result = validator.validate_financial_data("2330", test_financial_data)
+        print(f"✓ 數據品質驗證: {quality_result.quality_score:.3f}")
+          # 測試 DCF 參數
+        dcf_data = [1000, 1100, 1200, 1300, 1400]  # 簡化為現金流數據列表
         dcf_inputs = {
-            'revenue': [1000, 1100, 1200, 1300, 1400],
-            'growth_rate': 0.05,
-            'terminal_growth_rate': 0.03,
             'discount_rate': 0.10,
-            'shares_outstanding': 100,
-            'debt': 500,
-            'cash': 100
-        }
-        
-        # 測試增強型 DCF
+            'terminal_growth_rate': 0.03
+        }        # 測試增強型 DCF
         enhanced_dcf = EnhancedDCFModel()
-        result = enhanced_dcf.calculate_enhanced_dcf(**dcf_inputs)
-        print(f"✓ 增強型 DCF 計算: ${result.base_case_valuation:.2f}")
+        result = enhanced_dcf.calculate_dcf_value(
+            financial_data=dcf_data, 
+            discount_rate=0.10
+        )
+        print(f"✓ 增強型 DCF 計算: ${result:.2f}")
         
         # 測試整合處理器
         handler = IntegratedDCFHandler()
-        integrated_result = handler.calculate_integrated_dcf(
-            financial_data=test_financial_data,
-            dcf_inputs=dcf_inputs,
-            quality_threshold=0.6
+        integrated_result = handler.calculate_dcf_valuation(
+            stock_code="2330",
+            financials=test_financial_data,
+            risk_preference=0.08,
+            context=dcf_inputs
         )
-        print(f"✓ 整合處理器結果: ${integrated_result:.2f}")
+        print(f"✓ 整合處理器結果: {integrated_result.get('intrinsic_value_per_share', 0):.2f}")
         
-        return True, (quality_score, result, integrated_result)
+        return True, (quality_result.quality_score, result, integrated_result)
         
     except Exception as e:
         print(f"✗ 數據處理測試失敗: {e}")
@@ -129,8 +125,8 @@ def test_error_handling():
         
         # 驗證低品質數據
         validator = FinancialDataValidator()
-        quality_score = validator.validate_data_quality(low_quality_data)
-        print(f"✓ 低品質數據評分: {quality_score:.3f}")
+        quality_result = validator.validate_financial_data("TEST", low_quality_data)
+        print(f"✓ 低品質數據評分: {quality_result.quality_score:.3f}")
         
         # 測試降級機制
         handler = IntegratedDCFHandler()
@@ -144,12 +140,13 @@ def test_error_handling():
             'cash': 100
         }
         
-        result = handler.calculate_integrated_dcf(
-            financial_data=low_quality_data,
-            dcf_inputs=dcf_inputs,
-            quality_threshold=0.8  # 高閾值，強制降級
+        result = handler.calculate_dcf_valuation(
+            stock_code="ERROR_TEST",
+            financials=low_quality_data,
+            risk_preference=0.08,
+            context={'dcf_short_term_growth_rate': 0.05}  # 高閾值，強制降級
         )
-        print(f"✓ 降級機制測試通過: ${result:.2f}")
+        print(f"✓ 降級機制測試通過: {result.get('intrinsic_value_per_share', 0):.2f}")
         
         # 測試異常輸入處理
         try:
@@ -159,7 +156,7 @@ def test_error_handling():
                 'discount_rate': -0.1,  # 負值
             }
             enhanced_dcf = EnhancedDCFModel()
-            enhanced_dcf.calculate_enhanced_dcf(**invalid_inputs)
+            enhanced_dcf.calculate_dcf_value(**invalid_inputs)
             print("✗ 應該拋出異常但沒有")
             return False
             

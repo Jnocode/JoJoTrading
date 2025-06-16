@@ -39,13 +39,12 @@ class EnhancedIndividualDCFComponent:
             'terminal_growth': 3.0,
             'projection_years': 5
         }
-        
-        # 初始化自動資料抓取器
+          # 初始化自動資料抓取器
         try:
             self.auto_fetcher = AutoDataFetcher()
             self.auto_fetch_available = True
         except Exception as e:
-            st.warning(f"自動資料抓取功能初始化失敗: {e}")
+            print(f"自動資料抓取功能初始化失敗: {e}")
             self.auto_fetcher = None
             self.auto_fetch_available = False
         
@@ -93,12 +92,13 @@ class EnhancedIndividualDCFComponent:
         else:
             auto_fetch = False
             st.warning("⚠️ 自動資料抓取功能不可用，請手動輸入數據")
-        
-        # 根據是否啟用自動抓取顯示不同界面
+          # 根據是否啟用自動抓取顯示不同界面
         if auto_fetch and stock_code and self.auto_fetch_available:
             return self._render_auto_data_panel(stock_code)
         else:
-            return self._render_manual_input_panel(stock_code)
+            # 確保 stock_code 不為 None，如果為 None 則使用預設值
+            safe_stock_code = stock_code if stock_code else self.default_values['stock_code']
+            return self._render_manual_input_panel(safe_stock_code)
     
     def _fetch_and_update_data(self, stock_code: str) -> None:
         """抓取並更新股票數據"""

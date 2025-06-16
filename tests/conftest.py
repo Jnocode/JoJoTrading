@@ -109,6 +109,124 @@ def dcf_parameters():
         "beta": 1.2
     }
 
+@pytest.fixture
+def enhanced_financial_data():
+    """增強的財務數據夾具 - 支援多種格式"""
+    # 基礎數據結構
+    base_data = {
+        "income_statement": {
+            "revenue": [1000000, 1100000, 1200000],
+            "operating_income": [200000, 220000, 240000],
+            "net_income": [150000, 165000, 180000],
+            "eps": [3.5, 3.8, 4.1]
+        },
+        "balance_sheet": {
+            "total_assets": [800000, 850000, 900000],
+            "total_liabilities": [300000, 320000, 340000],
+            "shareholders_equity": [500000, 530000, 560000],
+            "book_value_per_share": [11.5, 12.2, 12.9]
+        },
+        "cash_flow": {
+            "operating_cash_flow": [180000, 195000, 210000],
+            "investing_cash_flow": [-50000, -55000, -60000],
+            "financing_cash_flow": [-30000, -25000, -20000],
+            "free_cash_flow": [130000, 140000, 150000]  # 根級別
+        },
+        # 支援嵌套結構的自由現金流
+        "free_cash_flow": {
+            "annual": [130000, 140000, 150000],
+            "quarterly": [32500, 35000, 37500, 40000],
+            "projected": [160000, 170000, 180000, 190000, 200000]
+        }
+    }
+    
+    return base_data
+
+@pytest.fixture
+def multi_format_financial_data():
+    """多格式財務數據夾具 - 測試不同數據結構兼容性"""
+    return {
+        # 格式 1: 列表格式（適用於歷史數據）
+        "format_list": {
+            "free_cash_flow": [130000, 140000, 150000],
+            "revenue": [1000000, 1100000, 1200000],
+            "net_income": [150000, 165000, 180000]
+        },
+        
+        # 格式 2: 字典格式（適用於詳細分析）
+        "format_dict": {
+            "free_cash_flow": {
+                "annual": [130000, 140000, 150000],
+                "quarterly": [32500, 35000, 37500, 40000]
+            },
+            "revenue": {
+                "annual": [1000000, 1100000, 1200000],
+                "quarterly": [250000, 275000, 300000, 325000]
+            }
+        },
+        
+        # 格式 3: 混合格式（實際應用情況）
+        "format_mixed": {
+            "free_cash_flow": [130000, 140000, 150000],  # 列表
+            "revenue": {"annual": [1000000, 1100000, 1200000]},  # 嵌套
+            "net_income": 150000  # 單值
+        }
+    }
+
+@pytest.fixture
+def dcf_test_data():
+    """DCF 測試專用數據夾具"""
+    return {
+        "company_id": "2330",
+        "company_name": "台積電",
+        "financial_data": {
+            "free_cash_flow": [50000000, 55000000, 60000000],  # 三年歷史FCF
+            "revenue": [1500000000, 1600000000, 1700000000],
+            "net_income": [500000000, 550000000, 600000000],
+            "shares_outstanding": 25930380038,
+            "capex": [15000000, 16000000, 17000000],
+            "depreciation": [12000000, 13000000, 14000000]
+        },
+        "dcf_parameters": {
+            "discount_rate": 0.10,
+            "terminal_growth_rate": 0.03,
+            "projection_years": 5,
+            "short_term_growth": 0.12,
+            "long_term_growth": 0.05
+        },
+        "expected_results": {
+            "intrinsic_value_range": (400, 600),  # 預期估值範圍
+            "fcf_growth_rate": 0.10,
+            "terminal_value_ratio": 0.65
+        }
+    }
+
+# 數據驗證工具
+@pytest.fixture
+def data_validator():
+    """數據驗證工具夾具"""
+    def validate_structure(data, expected_fields):
+        """驗證數據結構"""
+        missing_fields = []
+        for field in expected_fields:
+            if field not in data:
+                missing_fields.append(field)
+        return len(missing_fields) == 0, missing_fields
+    
+    def validate_fcf_format(fcf_data):
+        """驗證自由現金流數據格式"""
+        if isinstance(fcf_data, list):
+            return "list", len(fcf_data)
+        elif isinstance(fcf_data, dict):
+            return "dict", list(fcf_data.keys())
+        else:
+            return "single", type(fcf_data).__name__
+    
+    return {
+        "validate_structure": validate_structure,
+        "validate_fcf_format": validate_fcf_format
+    }
+
 # 標記定義
 def pytest_configure(config):
     """配置自定義標記"""

@@ -137,7 +137,7 @@ class SectorScreeningComponent:
             help="啟用後將只保留符合成長條件的股票"
         )
         
-        growth_params = {'enable_growth_filter': enable_growth_filter}
+        growth_params: Dict[str, Any] = {'enable_growth_filter': enable_growth_filter}
         
         if enable_growth_filter:
             with st.expander("成長股條件設定"):
@@ -240,8 +240,14 @@ class SectorScreeningComponent:
             })
         
         # 設置為產業處理狀態開始執行
-        machine.current_state = machine.current_state.__class__.__name__ if hasattr(machine.current_state, '__class__') else "CONFIG_LOAD"
-          # 重新渲染以開始狀態機執行
+        try:
+            from src.jojo_trading.core.state_machine import JoJoState
+            machine.current_state = JoJoState.INDUSTRY_PROCESS
+        except ImportError:
+            # 如果無法導入狀態機，則跳過狀態設置
+            pass
+        
+        # 重新渲染以開始狀態機執行
         st.rerun()
     
     def _display_state_machine_status(self, machine, params: Dict[str, Any]) -> None:
@@ -301,15 +307,16 @@ class SectorScreeningComponent:
         """顯示數據獲取進度"""
         st.warning("📡 正在獲取財務數據...")
         with st.spinner("正在從 FinMind 抓取財務數據，請稍候..."):
+            # 簡化的進度顯示
             progress_bar = st.progress(0)
             status_text = st.empty()
             
-            # 更新進度顯示
-            for i in range(1, 101, 10):
-                progress_bar.progress(i)
-                status_text.text(f"數據獲取進度: {i}%")
-                
+            status_text.text("正在準備數據獲取...")
+            progress_bar.progress(20)
+            
+            # 執行實際的數據獲取
             machine.execute_state()
+            
             progress_bar.progress(100)
             status_text.text("✅ 數據獲取完成")
             
@@ -346,9 +353,18 @@ class SectorScreeningComponent:
         
         # 重置按鈕
         if st.button("🔄 重新篩選"):
-            from src.jojo_trading.core.state_machine import JoJoState
-            machine.current_state = JoJoState.CONFIG_LOAD
-            st.rerun()
+            try:
+                from src.jojo_trading.core.state_machine import JoJoState
+                machine.current_state = JoJoState.CONFIG_LOAD
+                # 清理 session state
+                if 'ui_init_executed' in st.session_state:
+                    del st.session_state.ui_init_executed
+                st.rerun()
+            except ImportError:
+                # 如果無法導入狀態機，則重新初始化
+                if 'sector_jojo_machine' in st.session_state:
+                    del st.session_state.sector_jojo_machine
+                st.rerun()
     
     def _create_results_dataframe(self, filtered_results: List[Dict]) -> pd.DataFrame:
         """創建結果數據框
@@ -425,9 +441,18 @@ class SectorScreeningComponent:
         st.error(f"錯誤訊息: {error_msg}")
         
         if st.button("🔄 重試"):
-            from src.jojo_trading.core.state_machine import JoJoState
-            machine.current_state = JoJoState.CONFIG_LOAD
-            st.rerun()
+            try:
+                from src.jojo_trading.core.state_machine import JoJoState
+                machine.current_state = JoJoState.CONFIG_LOAD
+                # 清理錯誤狀態
+                if 'error_message' in machine.context:
+                    del machine.context['error_message']
+                st.rerun()
+            except ImportError:
+                # 如果無法導入狀態機，則重新初始化
+                if 'sector_jojo_machine' in st.session_state:
+                    del st.session_state.sector_jojo_machine
+                st.rerun()
     
     def render_system_status(self, machine) -> None:
         """渲染系統狀態顯示
@@ -451,8 +476,19 @@ class SectorScreeningComponent:
         
         # 初始化狀態機（如果未存在）
         if 'sector_jojo_machine' not in st.session_state:
-            from src.jojo_trading.core.state_machine import JoJoStateMachine, JoJoState
-            st.session_state.sector_jojo_machine = JoJoStateMachine()
+            try:
+                from src.jojo_trading.core.state_machine import JoJoStateMachine, JoJoState
+                st.session_state.sector_jojo_machine = JoJoStateMachine()
+            except ImportError as e:
+                st.error(f"無法載入狀態機模組: {e}")
+                # 創建一個簡單的替代物件
+                class SimpleMachine:
+                    def __init__(self):
+                        self.context = {}
+                        self.current_state = "IDLE"
+                    def execute_state(self):
+                        pass
+                st.session_state.sector_jojo_machine = SimpleMachine()
         
         machine = st.session_state.sector_jojo_machine
         

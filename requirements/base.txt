@@ -14,6 +14,9 @@ openpyxl>=3.1.0
 xlsxwriter>=3.1.0
 python-dateutil>=2.8.0
 
+# 技術分析庫
+ta>=0.10.0
+
 # XBRL 處理相關依賴
 beautifulsoup4>=4.12.0
 lxml>=4.9.0

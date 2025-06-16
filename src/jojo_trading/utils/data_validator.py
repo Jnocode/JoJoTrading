@@ -66,8 +66,7 @@ class FinancialDataValidator:
                         message=f"{field} 數據點不足（少於3個年度）",
                         level=ValidationLevel.WARNING
                     ))
-                    quality_score -= 10
-        
+                    quality_score -= 10        
         if missing_fields:
             issues.append(ValidationIssue(
                 field="missing_fields",
@@ -87,11 +86,49 @@ class FinancialDataValidator:
     
     def validate_dcf_inputs(self, stock_code, inputs):
         """驗證DCF輸入參數"""
+        issues = []
+        quality_score = 100.0
+        
         if inputs is None:
-            return False
+            issues.append(ValidationIssue(
+                field="inputs",
+                message="DCF輸入參數為空",
+                level=ValidationLevel.ERROR
+            ))
+            quality_score = 0
+            return ValidationResult(
+                quality_score=quality_score,
+                issues=issues,
+                is_valid=False
+            )
+        
+        # 檢查必要欄位
         required_fields = ['fcf_eps', 'discount_rate']
         if isinstance(inputs, dict):
             for field in required_fields:
                 if field not in inputs or inputs[field] is None:
-                    return False
-        return True
+                    issues.append(ValidationIssue(
+                        field=field,
+                        message=f"缺少必要欄位: {field}",
+                        level=ValidationLevel.ERROR
+                    ))
+                    quality_score -= 20
+        
+        # 檢查數值範圍
+        if isinstance(inputs, dict):
+            if 'discount_rate' in inputs and inputs['discount_rate'] is not None:
+                if not (0 < inputs['discount_rate'] < 1):
+                    issues.append(ValidationIssue(
+                        field="discount_rate",
+                        message="折現率應在0-1之間",
+                        level=ValidationLevel.WARNING
+                    ))
+                    quality_score -= 10
+        
+        is_valid = quality_score >= 60  # 60分以上視為通過
+        
+        return ValidationResult(
+            quality_score=max(0, quality_score),
+            issues=issues,
+            is_valid=is_valid
+        )
