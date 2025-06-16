@@ -1,0 +1,391 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "JoJo Trading - Azure Container Instances 部署模板"
+  },
+  "parameters": {
+    "environment": {
+      "type": "string",
+      "defaultValue": "production",
+      "allowedValues": [
+        "production",
+        "staging",
+        "development"
+      ],
+      "metadata": {
+        "description": "部署環境"
+      }
+    },
+    "containerImageName": {
+      "type": "string",
+      "defaultValue": "jojo-trading:latest",
+      "metadata": {
+        "description": "容器映像名稱"
+      }
+    },
+    "containerRegistryUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Container Registry URL"
+      }
+    },
+    "containerRegistryUsername": {
+      "type": "string",
+      "metadata": {
+        "description": "Container Registry 使用者名稱"
+      }
+    },
+    "containerRegistryPassword": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Container Registry 密碼"
+      }
+    },
+    "finmindToken": {
+      "type": "securestring",
+      "metadata": {
+        "description": "FinMind API Token"
+      }
+    }
+  },
+  "variables": {
+    "resourceNamePrefix": "[concat(parameters('environment'), '-jojo-trading')]",
+    "containerGroupName": "[concat(variables('resourceNamePrefix'), '-cg')]",
+    "applicationGatewayName": "[concat(variables('resourceNamePrefix'), '-agw')]",
+    "publicIPName": "[concat(variables('resourceNamePrefix'), '-pip')]",
+    "vnetName": "[concat(variables('resourceNamePrefix'), '-vnet')]",
+    "subnetName": "default",
+    "logAnalyticsWorkspaceName": "[concat(variables('resourceNamePrefix'), '-laws')]",
+    "storageAccountName": "[concat(replace(variables('resourceNamePrefix'), '-', ''), 'storage')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2021-06-01",
+      "name": "[variables('logAnalyticsWorkspaceName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30,
+        "features": {
+          "enableLogAccessUsingOnlyResourcePermissions": true
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2021-09-01",
+      "name": "[variables('storageAccountName')]",
+      "location": "[resourceGroup().location]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "kind": "StorageV2",
+      "properties": {
+        "accessTier": "Hot",
+        "allowBlobPublicAccess": false,
+        "minimumTlsVersion": "TLS1_2"
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2021-05-01",
+      "name": "[variables('vnetName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.0.0.0/16"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('subnetName')]",
+            "properties": {
+              "addressPrefix": "10.0.1.0/24",
+              "delegations": [
+                {
+                  "name": "delegation",
+                  "properties": {
+                    "serviceName": "Microsoft.ContainerInstance/containerGroups"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "ApplicationGatewaySubnet",
+            "properties": {
+              "addressPrefix": "10.0.2.0/24"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2021-05-01",
+      "name": "[variables('publicIPName')]",
+      "location": "[resourceGroup().location]",
+      "sku": {
+        "name": "Standard"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Static",
+        "dnsSettings": {
+          "domainNameLabel": "[concat('jojo-trading-', parameters('environment'), '-', uniqueString(resourceGroup().id))]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/applicationGateways",
+      "apiVersion": "2021-05-01",
+      "name": "[variables('applicationGatewayName')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPName'))]",
+        "[resourceId('Microsoft.ContainerInstance/containerGroups', variables('containerGroupName'))]"
+      ],
+      "properties": {
+        "sku": {
+          "name": "Standard_v2",
+          "tier": "Standard_v2",
+          "capacity": 2
+        },
+        "gatewayIPConfigurations": [
+          {
+            "name": "appGatewayIpConfig",
+            "properties": {
+              "subnet": {
+                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), 'ApplicationGatewaySubnet')]"
+              }
+            }
+          }
+        ],
+        "frontendIPConfigurations": [
+          {
+            "name": "appGwPublicFrontendIp",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPName'))]"
+              }
+            }
+          }
+        ],
+        "frontendPorts": [
+          {
+            "name": "port_80",
+            "properties": {
+              "port": 80
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "myBackendPool",
+            "properties": {
+              "backendAddresses": [
+                {
+                  "ipAddress": "[reference(resourceId('Microsoft.ContainerInstance/containerGroups', variables('containerGroupName'))).ipAddress.ip]"
+                }
+              ]
+            }
+          }
+        ],
+        "backendHttpSettingsCollection": [
+          {
+            "name": "myHTTPSetting",
+            "properties": {
+              "port": 8501,
+              "protocol": "Http",
+              "cookieBasedAffinity": "Disabled",
+              "pickHostNameFromBackendAddress": false,
+              "requestTimeout": 20,
+              "probe": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/probes', variables('applicationGatewayName'), 'healthProbe')]"
+              }
+            }
+          }
+        ],
+        "httpListeners": [
+          {
+            "name": "myListener",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', variables('applicationGatewayName'), 'appGwPublicFrontendIp')]"
+              },
+              "frontendPort": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendPorts', variables('applicationGatewayName'), 'port_80')]"
+              },
+              "protocol": "Http"
+            }
+          }
+        ],
+        "requestRoutingRules": [
+          {
+            "name": "myRoutingRule",
+            "properties": {
+              "ruleType": "Basic",
+              "httpListener": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/httpListeners', variables('applicationGatewayName'), 'myListener')]"
+              },
+              "backendAddressPool": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/backendAddressPools', variables('applicationGatewayName'), 'myBackendPool')]"
+              },
+              "backendHttpSettings": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', variables('applicationGatewayName'), 'myHTTPSetting')]"
+              }
+            }
+          }
+        ],
+        "probes": [
+          {
+            "name": "healthProbe",
+            "properties": {
+              "protocol": "Http",
+              "host": "127.0.0.1",
+              "path": "/_stcore/health",
+              "interval": 30,
+              "timeout": 30,
+              "unhealthyThreshold": 3,
+              "pickHostNameFromBackendHttpSettings": false,
+              "minServers": 0,
+              "match": {
+                "statusCodes": [
+                  "200-399"
+                ]
+              }
+            }
+          }
+        ],
+        "enableHttp2": false,
+        "autoscaleConfiguration": {
+          "minCapacity": 2,
+          "maxCapacity": 10
+        }
+      }
+    },
+    {
+      "type": "Microsoft.ContainerInstance/containerGroups",
+      "apiVersion": "2021-09-01",
+      "name": "[variables('containerGroupName')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsWorkspaceName'))]"
+      ],
+      "properties": {
+        "containers": [
+          {
+            "name": "jojo-trading-app",
+            "properties": {
+              "image": "[concat(parameters('containerRegistryUrl'), '/', parameters('containerImageName'))]",
+              "ports": [
+                {
+                  "port": 8501,
+                  "protocol": "TCP"
+                }
+              ],
+              "environmentVariables": [
+                {
+                  "name": "ENV",
+                  "value": "[parameters('environment')]"
+                },
+                {
+                  "name": "FINMIND_TOKEN",
+                  "secureValue": "[parameters('finmindToken')]"
+                }
+              ],
+              "resources": {
+                "requests": {
+                  "cpu": 1,
+                  "memoryInGB": 2
+                },
+                "limits": {
+                  "cpu": 2,
+                  "memoryInGB": 4
+                }
+              },
+              "livenessProbe": {
+                "httpGet": {
+                  "path": "/_stcore/health",
+                  "port": 8501,
+                  "scheme": "Http"
+                },
+                "initialDelaySeconds": 60,
+                "periodSeconds": 30,
+                "timeoutSeconds": 5,
+                "successThreshold": 1,
+                "failureThreshold": 3
+              },
+              "readinessProbe": {
+                "httpGet": {
+                  "path": "/_stcore/health",
+                  "port": 8501,
+                  "scheme": "Http"
+                },
+                "initialDelaySeconds": 30,
+                "periodSeconds": 10,
+                "timeoutSeconds": 5,
+                "successThreshold": 1,
+                "failureThreshold": 3
+              }
+            }
+          }
+        ],
+        "osType": "Linux",
+        "restartPolicy": "Always",
+        "ipAddress": {
+          "type": "Private",
+          "ports": [
+            {
+              "port": 8501,
+              "protocol": "TCP"
+            }
+          ]
+        },
+        "imageRegistryCredentials": [
+          {
+            "server": "[parameters('containerRegistryUrl')]",
+            "username": "[parameters('containerRegistryUsername')]",
+            "password": "[parameters('containerRegistryPassword')]"
+          }
+        ],
+        "subnetIds": [
+          {
+            "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), variables('subnetName'))]"
+          }
+        ],
+        "diagnostics": {
+          "logAnalytics": {
+            "workspaceId": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsWorkspaceName'))).customerId]",
+            "workspaceKey": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsWorkspaceName')), '2021-06-01').primarySharedKey]"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "applicationUrl": {
+      "type": "string",
+      "value": "[concat('http://', reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPName'))).dnsSettings.fqdn)]"
+    },
+    "publicIPAddress": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPName'))).ipAddress]"
+    },
+    "containerGroupIP": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ContainerInstance/containerGroups', variables('containerGroupName'))).ipAddress.ip]"
+    },
+    "logAnalyticsWorkspace": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsWorkspaceName'))).customerId]"
+    }
+  }
+}

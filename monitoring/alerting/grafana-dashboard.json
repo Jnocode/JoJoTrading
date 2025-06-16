@@ -1,0 +1,269 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "JoJo Trading - 投資分析平台監控",
+    "tags": ["jojo-trading", "investment", "monitoring"],
+    "style": "dark",
+    "timezone": "Asia/Taipei",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "系統概覽",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "up{job=\"jojo-trading\"}",
+            "legendFormat": "服務狀態"
+          },
+          {
+            "expr": "sum(rate(http_requests_total{job=\"jojo-trading\"}[5m]))",
+            "legendFormat": "每秒請求數"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"jojo-trading\"}[5m]))",
+            "legendFormat": "95% 回應時間"
+          },
+          {
+            "expr": "rate(http_requests_total{job=\"jojo-trading\",status=~\"5..\"}[5m]) / rate(http_requests_total{job=\"jojo-trading\"}[5m]) * 100",
+            "legendFormat": "錯誤率 (%)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "red", "value": 80}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "CPU 使用率",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "rate(container_cpu_usage_seconds_total{container=\"jojo-trading\"}[5m]) * 100",
+            "legendFormat": "CPU 使用率 (%)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "linear",
+              "barAlignment": 0,
+              "lineWidth": 1,
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "spanNulls": false,
+              "insertNulls": false,
+              "showPoints": "never",
+              "pointSize": 5,
+              "stacking": {
+                "mode": "none",
+                "group": "A"
+              },
+              "axisPlacement": "auto",
+              "axisLabel": "",
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "vis": false
+              },
+              "thresholdsStyle": {
+                "mode": "off"
+              }
+            },
+            "color": {
+              "mode": "palette-classic"
+            },
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 70},
+                {"color": "red", "value": 90}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "記憶體使用率",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "(container_memory_usage_bytes{container=\"jojo-trading\"} / container_spec_memory_limit_bytes{container=\"jojo-trading\"}) * 100",
+            "legendFormat": "記憶體使用率 (%)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 70},
+                {"color": "red", "value": 90}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "HTTP 請求數",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{job=\"jojo-trading\"}[5m])) by (status)",
+            "legendFormat": "HTTP {{ status }}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "custom": {
+              "stacking": {
+                "mode": "normal"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "回應時間分布",
+        "type": "heatmap",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {
+            "expr": "rate(http_request_duration_seconds_bucket{job=\"jojo-trading\"}[5m])",
+            "legendFormat": "{{ le }}"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "DCF 計算性能",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 24},
+        "targets": [
+          {
+            "expr": "rate(dcf_calculations_total{job=\"jojo-trading\"}[5m])",
+            "legendFormat": "DCF 計算次數/秒"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(dcf_calculation_duration_seconds_bucket{job=\"jojo-trading\"}[5m]))",
+            "legendFormat": "DCF 計算時間 (95%)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Redis 性能",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+        "targets": [
+          {
+            "expr": "redis_connected_clients",
+            "legendFormat": "連接的客戶端"
+          },
+          {
+            "expr": "rate(redis_commands_processed_total[5m])",
+            "legendFormat": "命令執行率"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "錯誤日誌",
+        "type": "logs",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+        "targets": [
+          {
+            "expr": "{job=\"jojo-trading\"} |= \"ERROR\"",
+            "refId": "A"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "API 使用統計",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+        "targets": [
+          {
+            "expr": "sum(rate(api_requests_total{job=\"jojo-trading\"}[5m])) by (endpoint)",
+            "legendFormat": "{{ endpoint }}"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "用戶活動",
+        "type": "timeseries",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+        "targets": [
+          {
+            "expr": "rate(user_sessions_total{job=\"jojo-trading\"}[5m])",
+            "legendFormat": "活躍用戶會話"
+          },
+          {
+            "expr": "rate(page_views_total{job=\"jojo-trading\"}[5m])",
+            "legendFormat": "頁面瀏覽量"
+          }
+        ]
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "instance",
+          "type": "query",
+          "query": "label_values(up{job=\"jojo-trading\"}, instance)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "部署事件",
+          "datasource": "prometheus",
+          "expr": "resets(process_start_time_seconds{job=\"jojo-trading\"}[1h])",
+          "titleFormat": "應用重啟",
+          "textFormat": "{{ instance }} 重新啟動"
+        }
+      ]
+    }
+  }
+}

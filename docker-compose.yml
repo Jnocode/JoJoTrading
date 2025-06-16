@@ -1,0 +1,100 @@
+# 🐳 JoJo Trading - Docker Compose 配置
+# 支援開發環境和生產環境部署
+
+version: '3.8'
+
+services:
+  # 主應用服務
+  jojo-trading:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jojo-trading-app
+    ports:
+      - "8501:8501"
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - CACHE_ENABLED=true
+      - DATA_CACHE_SIZE=1000
+    volumes:
+      # 掛載數據目錄（持久化）
+      - ./data:/app/data
+      - ./cache:/app/cache
+      - ./logs:/app/logs
+      # 配置文件掛載
+      - ./config:/app/config:ro
+    networks:
+      - jojo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - redis-cache
+
+  # Redis 緩存服務
+  redis-cache:
+    image: redis:7-alpine
+    container_name: jojo-redis-cache
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - jojo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 監控服務（可選）
+  monitoring:
+    image: prom/prometheus:latest
+    container_name: jojo-monitoring
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - jojo-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+# 網路配置
+networks:
+  jojo-network:
+    driver: bridge
+    name: jojo-trading-network
+
+# 數據卷配置
+volumes:
+  redis-data:
+    name: jojo-redis-data
+  prometheus-data:
+    name: jojo-prometheus-data
+
+# 🔧 使用說明:
+# 
+# 開發環境啟動:
+# docker-compose up -d
+# 
+# 生產環境啟動（含監控）:
+# docker-compose --profile monitoring up -d
+# 
+# 查看日誌:
+# docker-compose logs -f jojo-trading
+# 
+# 停止服務:
+# docker-compose down
+# 
+# 重建映像:
+# docker-compose build --no-cache

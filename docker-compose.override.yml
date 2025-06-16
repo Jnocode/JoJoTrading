@@ -1,0 +1,53 @@
+# 🛠️ 開發環境 Docker Compose Override
+# 用於開發階段的特殊配置
+
+version: '3.8'
+
+services:
+  jojo-trading:
+    build:
+      target: development  # 如果有多階段建構
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - STREAMLIT_SERVER_RUNONSTARTUP=true
+      - STREAMLIT_BROWSER_GATHERUSAGESTATS=false
+    volumes:
+      # 開發環境掛載原始碼（熱重載）
+      - .:/app
+      - /app/.venv  # 排除虛擬環境
+    ports:
+      - "8501:8501"
+      - "8502:8502"  # 額外端口用於測試
+    command: >
+      streamlit run app.py 
+      --server.port=8501 
+      --server.address=0.0.0.0 
+      --server.enableCORS=false 
+      --server.enableXsrfProtection=false
+      --server.fileWatcherType=poll
+      --server.runOnSave=true
+    
+  # 開發數據庫（SQLite 用於測試）
+  dev-db:
+    image: alpine:latest
+    container_name: jojo-dev-db
+    volumes:
+      - ./data/dev.db:/data/dev.db
+    command: tail -f /dev/null  # 保持容器運行
+    profiles:
+      - development
+
+# 開發環境使用說明:
+# 
+# 啟動開發環境:
+# docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d
+# 
+# 或簡化為:
+# docker-compose up -d  # 自動讀取 override 文件
+# 
+# 進入容器進行調試:
+# docker-compose exec jojo-trading bash
+# 
+# 查看實時日誌:
+# docker-compose logs -f jojo-trading

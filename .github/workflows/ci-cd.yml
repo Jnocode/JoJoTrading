@@ -1,0 +1,307 @@
+# 🚀 JoJo Trading - 主要 CI/CD 流程
+# 自動化測試、建構、安全掃描和部署
+
+name: 🚀 CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    - cron: '0 2 * * 1'  # 每週一凌晨2點執行
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '18'
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: jojo-trading
+
+jobs:
+  # 🧪 代碼品質檢查
+  code-quality:
+    name: 🔍 Code Quality & Linting
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install flake8 black isort bandit safety
+        
+    - name: 🎨 Code formatting check (Black)
+      run: black --check --diff .
+      
+    - name: 📐 Import sorting check (isort)
+      run: isort --check-only --diff .
+      
+    - name: 🔍 Linting (Flake8)
+      run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+      
+    - name: 🛡️ Security check (Bandit)
+      run: bandit -r src/ -f json -o bandit-report.json
+      continue-on-error: true
+      
+    - name: 🔐 Dependency security check (Safety)
+      run: safety check --json --output safety-report.json
+      continue-on-error: true
+      
+    - name: 📤 Upload security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+
+  # 🧪 單元測試
+  unit-tests:
+    name: 🧪 Unit Tests
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+        
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Setup Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov pytest-xdist
+        
+    - name: 🧪 Run tests with coverage
+      run: |
+        pytest tests/ -v \
+          --cov=src \
+          --cov-report=xml \
+          --cov-report=html \
+          --junitxml=pytest-results.xml \
+          -n auto
+          
+    - name: 📊 Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        
+    - name: 📤 Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ matrix.python-version }}
+        path: |
+          pytest-results.xml
+          htmlcov/
+          coverage.xml
+
+  # 🐳 Docker 建構測試
+  docker-build:
+    name: 🐳 Docker Build & Test
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: 🏗️ Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: false
+        tags: ${{ env.IMAGE_NAME }}:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+    - name: 🧪 Test Docker image
+      run: |
+        # 啟動容器進行基本功能測試
+        docker run -d --name test-container \
+          -p 8501:8501 \
+          ${{ env.IMAGE_NAME }}:test
+          
+        # 等待應用程式啟動
+        sleep 30
+        
+        # 健康檢查
+        curl -f http://localhost:8501/_stcore/health || exit 1
+        
+        # 停止測試容器
+        docker stop test-container
+        docker rm test-container
+
+  # 🔒 安全掃描
+  security-scan:
+    name: 🔒 Security Scanning
+    runs-on: ubuntu-latest
+    needs: docker-build
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Build image for scanning
+      run: docker build -t ${{ env.IMAGE_NAME }}:scan .
+      
+    - name: 🔍 Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.IMAGE_NAME }}:scan
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        
+    - name: 📤 Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # 📊 性能測試
+  performance-test:
+    name: 📊 Performance Testing
+    runs-on: ubuntu-latest
+    needs: docker-build
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install locust
+        
+    - name: 🏃‍♂️ Run performance benchmarks
+      run: |
+        # 執行內建的性能基準測試
+        python scripts/performance_benchmark.py
+        
+    - name: 📤 Upload performance results
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-results
+        path: performance-results.json
+
+  # 🚀 建構和推送映像 (僅在標籤或main分支)
+  build-and-push:
+    name: 🚀 Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: [code-quality, unit-tests, security-scan, performance-test]
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: 🔑 Login to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.DOCKER_REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: 🏷️ Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=raw,value=latest,enable={{is_default_branch}}
+          
+    - name: 🏗️ Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # 🌐 部署到測試環境
+  deploy-staging:
+    name: 🌐 Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+    - name: 🚀 Deploy to staging server
+      run: |
+        echo "🌐 部署到測試環境..."
+        # 這裡會是實際的部署腳本
+        # 例如: kubectl apply 或 docker-compose 命令
+        
+  # 🏭 部署到生產環境
+  deploy-production:
+    name: 🏭 Deploy to Production
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: startsWith(github.ref, 'refs/tags/')
+    environment: production
+    
+    steps:
+    - name: 🚀 Deploy to production server
+      run: |
+        echo "🏭 部署到生產環境..."
+        # 這裡會是實際的生產部署腳本
+        
+  # 📨 通知
+  notify:
+    name: 📨 Send Notifications
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    
+    steps:
+    - name: 📨 Send Slack notification
+      if: always()
+      run: |
+        if [[ "${{ needs.deploy-staging.result }}" == "success" ]] || [[ "${{ needs.deploy-production.result }}" == "success" ]]; then
+          echo "✅ 部署成功通知"
+        else
+          echo "❌ 部署失敗通知"
+        fi

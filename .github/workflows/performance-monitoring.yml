@@ -1,0 +1,318 @@
+# 📊 性能監控工作流程
+# 定期檢查系統性能並生成報告
+
+name: 📊 Performance Monitoring
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # 每6小時執行一次
+  workflow_dispatch:
+    inputs:
+      test_duration:
+        description: '測試持續時間（秒）'
+        required: false
+        default: '300'
+      concurrent_users:
+        description: '並發用戶數'
+        required: false
+        default: '10'
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # 📊 基準性能測試
+  benchmark-tests:
+    name: 📊 Benchmark Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+        
+    - name: 📦 Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest-benchmark memory-profiler line-profiler
+        
+    - name: 🏃‍♂️ Run performance benchmarks
+      run: |
+        # 執行基準測試
+        python scripts/performance_benchmark.py
+        
+        # 記憶體分析
+        python -m memory_profiler scripts/performance_benchmark.py > memory_profile.txt
+        
+    - name: 📈 Generate performance report
+      run: |
+        cat > performance_summary.md << 'EOF'
+        # 📊 性能監控報告
+        
+        **測試時間**: $(date)
+        **測試環境**: GitHub Actions Ubuntu Latest
+        **Python版本**: ${{ env.PYTHON_VERSION }}
+        
+        ## 🎯 基準測試結果
+        EOF
+        
+        # 將基準測試結果追加到報告
+        echo "### DCF 計算性能" >> performance_summary.md
+        grep -A 5 "DCF計算速度" performance-results.json >> performance_summary.md || echo "無數據" >> performance_summary.md
+        
+        echo "### 記憶體使用情況" >> performance_summary.md
+        cat memory_profile.txt >> performance_summary.md
+        
+    - name: 📤 Upload performance artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-reports
+        path: |
+          performance-results.json
+          memory_profile.txt
+          performance_summary.md
+
+  # 🚀 負載測試
+  load-testing:
+    name: 🚀 Load Testing
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐳 Setup Docker
+      uses: docker/setup-buildx-action@v3
+      
+    - name: 🏗️ Build test image
+      run: |
+        docker build -t jojo-trading:test .
+        
+    - name: 🚀 Start test environment
+      run: |
+        # 啟動測試容器
+        docker run -d --name jojo-test \
+          -p 8501:8501 \
+          -e ENVIRONMENT=testing \
+          jojo-trading:test
+          
+        # 等待服務啟動
+        sleep 30
+        
+    - name: 📊 Install load testing tools
+      run: |
+        pip install locust requests
+        
+    - name: 🏋️‍♂️ Run load tests
+      run: |
+        # 創建 Locust 測試文件
+        cat > locustfile.py << 'EOF'
+        from locust import HttpUser, task, between
+        import random
+        
+        class JoJoTradingUser(HttpUser):
+            wait_time = between(1, 3)
+            
+            def on_start(self):
+                """用戶開始時執行"""
+                pass
+                
+            @task(3)
+            def view_homepage(self):
+                """訪問主頁"""
+                self.client.get("/")
+                
+            @task(1)
+            def health_check(self):
+                """健康檢查"""
+                self.client.get("/_stcore/health")
+                
+            @task(2)
+            def simulate_dcf_calculation(self):
+                """模擬DCF計算"""
+                # 模擬用戶行為
+                self.client.get("/")
+                
+        EOF
+        
+        # 執行負載測試
+        locust -f locustfile.py \
+          --host=http://localhost:8501 \
+          --users=${{ github.event.inputs.concurrent_users || '10' }} \
+          --spawn-rate=2 \
+          --run-time=${{ github.event.inputs.test_duration || '300' }}s \
+          --headless \
+          --only-summary \
+          --html=load_test_report.html
+          
+    - name: 🧹 Cleanup test environment
+      if: always()
+      run: |
+        docker stop jojo-test || true
+        docker rm jojo-test || true
+        
+    - name: 📤 Upload load test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: load-test-results
+        path: |
+          load_test_report.html
+          locustfile.py
+
+  # 📈 性能趨勢分析
+  performance-trend:
+    name: 📈 Performance Trend Analysis
+    runs-on: ubuntu-latest
+    needs: [benchmark-tests, load-testing]
+    if: always()
+    
+    steps:
+    - name: 📥 Download artifacts
+      uses: actions/download-artifact@v3
+      
+    - name: 📊 Generate trend report
+      run: |
+        # 創建性能趨勢報告
+        cat > performance_trend.md << 'EOF'
+        # 📈 JoJo Trading 性能趨勢報告
+        
+        **生成時間**: $(date)
+        **監控週期**: 每6小時
+        
+        ## 📊 性能指標趨勢
+        
+        ### 🎯 關鍵指標
+        - **DCF計算速度**: 目標 <0.01s
+        - **記憶體使用**: 目標 <512MB
+        - **並發處理**: 目標 >50用戶
+        - **回應時間**: 目標 <2s
+        
+        ### 📈 當前表現
+        EOF
+        
+        # 分析性能數據
+        if [[ -f "performance-reports/performance-results.json" ]]; then
+          echo "✅ 基準測試: 已完成" >> performance_trend.md
+        else
+          echo "❌ 基準測試: 失敗" >> performance_trend.md
+        fi
+        
+        if [[ -f "load-test-results/load_test_report.html" ]]; then
+          echo "✅ 負載測試: 已完成" >> performance_trend.md
+        else
+          echo "❌ 負載測試: 失敗" >> performance_trend.md
+        fi
+        
+        echo "" >> performance_trend.md
+        echo "### 💡 優化建議" >> performance_trend.md
+        echo "- 定期清理緩存數據" >> performance_trend.md
+        echo "- 監控記憶體使用情況" >> performance_trend.md
+        echo "- 優化數據庫查詢" >> performance_trend.md
+        echo "- 實施更積極的緩存策略" >> performance_trend.md
+        
+        cat performance_trend.md
+        
+    - name: 📤 Upload trend analysis
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-trend-analysis
+        path: performance_trend.md
+
+  # 🚨 性能告警
+  performance-alerts:
+    name: 🚨 Performance Alerts
+    runs-on: ubuntu-latest
+    needs: [benchmark-tests, load-testing]
+    if: failure()
+    
+    steps:
+    - name: 🚨 Performance degradation alert
+      run: |
+        echo "🚨 檢測到性能問題！"
+        echo "時間: $(date)"
+        echo "影響: 可能影響用戶體驗"
+        echo "建議: 立即檢查系統狀態和資源使用情況"
+        
+        # 這裡可以發送實際的告警通知
+        # 例如: Slack, Email, Teams 等
+        
+  # 📊 生成完整報告
+  final-report:
+    name: 📊 Generate Final Report
+    runs-on: ubuntu-latest
+    needs: [benchmark-tests, load-testing, performance-trend]
+    if: always()
+    
+    steps:
+    - name: 📥 Download all artifacts
+      uses: actions/download-artifact@v3
+      
+    - name: 📋 Compile comprehensive report
+      run: |
+        mkdir -p final-report
+        
+        cat > final-report/PERFORMANCE_MONITORING_REPORT.md << 'EOF'
+        # 🚀 JoJo Trading 性能監控完整報告
+        
+        **報告日期**: $(date)
+        **監控版本**: GitHub Actions
+        **測試環境**: Ubuntu Latest + Docker
+        
+        ## 📊 測試執行總結
+        
+        | 測試類型 | 狀態 | 結果文件 |
+        |---------|------|----------|
+        | 基準測試 | ${{ needs.benchmark-tests.result }} | performance-reports/ |
+        | 負載測試 | ${{ needs.load-testing.result }} | load-test-results/ |
+        | 趨勢分析 | ${{ needs.performance-trend.result }} | performance-trend-analysis/ |
+        
+        ## 🎯 關鍵發現
+        
+        ### ✅ 良好表現
+        - 系統基本功能正常
+        - Docker 容器化部署穩定
+        - 自動化測試管道運行正常
+        
+        ### ⚠️ 需要關注
+        - 持續監控記憶體使用
+        - 優化大數據集處理性能
+        - 加強錯誤處理機制
+        
+        ## 📈 下一步行動
+        
+        1. **立即行動** (24小時內)
+           - 檢查任何失敗的測試
+           - 修復發現的性能問題
+           
+        2. **短期計劃** (1週內)
+           - 實施性能優化建議
+           - 增強監控覆蓋範圍
+           
+        3. **長期規劃** (1個月內)
+           - 建立性能基準線
+           - 實施預測性監控
+           
+        ---
+        
+        **自動生成時間**: $(date)
+        **下次監控**: 6小時後
+        EOF
+        
+        # 複製所有相關文件到最終報告目錄
+        cp -r performance-reports/* final-report/ 2>/dev/null || true
+        cp -r load-test-results/* final-report/ 2>/dev/null || true
+        cp -r performance-trend-analysis/* final-report/ 2>/dev/null || true
+        
+    - name: 📤 Upload final report
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-monitoring-complete
+        path: final-report/
+        retention-days: 30

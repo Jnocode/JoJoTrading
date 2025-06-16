@@ -1,0 +1,119 @@
+# 🐳 Docker 忽略文件清單
+# 優化映像大小，排除不必要的文件
+
+# 開發環境相關
+.venv/
+.venv_new/
+venv/
+env/
+.env
+.env.local
+.env.development
+.env.test
+
+# Python 編譯文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 測試和覆蓋率
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE 和編輯器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系統文件
+.DS_Store
+Thumbs.db
+
+# Git 相關
+.git/
+.gitignore
+.gitattributes
+
+# 日誌文件
+logs/
+*.log
+
+# 暫存文件
+temp/
+tmp/
+.tmp/
+
+# 文檔和報告
+docs/
+reports/
+*.md
+!README.md
+
+# 備份和歸檔
+archive/
+backup/
+*.bak
+*.backup
+
+# 測試文件
+tests/
+*_test.py
+test_*.py
+
+# 開發腳本
+scripts/development/
+scripts/test/
+
+# 配置範本
+*.example
+*.template
+*.sample
+
+# 緩存文件（保留目錄結構但排除內容）
+cache/*
+!cache/.gitkeep
+
+# 數據文件（生產環境通過卷掛載）
+data/raw/
+data/processed/
+data/cache/
+
+# Docker 相關
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# CI/CD 配置
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+
+# 專案管理文件
+PROJECT_HANDOVER/
+PHASE*_DEVELOPMENT_PLAN.md
+*_REPORT.md
+*_PLAN.md
+DEVELOPER_*.md

@@ -1,0 +1,43 @@
+# 📊 JoJo Trading - Prometheus 監控配置
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus 自身監控
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # JoJo Trading 應用監控
+  - job_name: 'jojo-trading'
+    static_configs:
+      - targets: ['jojo-trading:8501']
+    metrics_path: '/_stcore/metrics'
+    scrape_interval: 30s
+
+  # Redis 監控
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-cache:6379']
+    scrape_interval: 30s
+
+# 告警規則（可選）
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093
+
+# 監控指標說明:
+# - 應用程式健康狀態
+# - 回應時間統計
+# - 記憶體使用情況
+# - CPU 使用率
+# - Redis 緩存命中率
+# - 用戶訪問統計

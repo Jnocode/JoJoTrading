@@ -1,0 +1,109 @@
+# 🚀 生產環境 Docker Compose 配置
+# 用於生產部署的優化配置
+
+version: '3.8'
+
+services:
+  jojo-trading:
+    image: jojo-trading:latest
+    container_name: jojo-trading-prod
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=WARNING
+      - STREAMLIT_SERVER_RUNONSTARTUP=false
+      - STREAMLIT_BROWSER_GATHERUSAGESTATS=false
+      - CACHE_ENABLED=true
+      - REDIS_URL=redis://redis-cache:6379/0
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+    volumes:
+      # 唯讀掛載，提高安全性
+      - ./data:/app/data:ro
+      - ./config:/app/config:ro
+      # 可寫掛載
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+
+  redis-cache:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    command: >
+      redis-server 
+      --maxmemory 256mb 
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --appendonly yes
+      --appendfsync everysec
+
+  # 負載均衡器（nginx）
+  nginx:
+    image: nginx:alpine
+    container_name: jojo-nginx-lb
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - jojo-trading
+    networks:
+      - jojo-network
+    restart: unless-stopped
+    profiles:
+      - production
+
+  # 監控和日誌
+  monitoring:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+# 生產環境安全設置
+networks:
+  jojo-network:
+    driver: bridge
+    driver_opts:
+      com.docker.network.enable_ipv6: "false"
+
+# 生產環境使用說明:
+# 
+# 部署生產環境:
+# docker-compose -f docker-compose.yml -f docker-compose.prod.yml --profile production up -d
+# 
+# 滾動更新:
+# docker-compose -f docker-compose.yml -f docker-compose.prod.yml pull
+# docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps jojo-trading
+# 
+# 備份數據:
+# docker-compose exec redis-cache redis-cli BGSAVE
+# 
+# 查看生產日誌:
+# docker-compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=100 -f

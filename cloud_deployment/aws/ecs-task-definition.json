@@ -1,0 +1,56 @@
+{
+  "family": "jojo-trading-app",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "jojo-trading-container",
+      "image": "jojo-trading:latest",
+      "portMappings": [
+        {
+          "containerPort": 8501,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "ENV",
+          "value": "production"
+        },
+        {
+          "name": "REDIS_URL",
+          "value": "redis://elasticache-endpoint:6379"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "FINMIND_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:jojo-trading/api-keys:FINMIND_TOKEN::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/jojo-trading",
+          "awslogs-region": "ap-northeast-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:8501/_stcore/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}

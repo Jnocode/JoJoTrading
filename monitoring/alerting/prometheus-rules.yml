@@ -1,0 +1,161 @@
+# 🚨 JoJo Trading 監控告警規則配置
+
+groups:
+  - name: jojo_trading_alerts
+    rules:
+      # 應用程式可用性告警
+      - alert: JoJoTradingDown
+        expr: up{job="jojo-trading"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: jojo-trading
+        annotations:
+          summary: "JoJo Trading 應用程式無法訪問"
+          description: "JoJo Trading 應用程式已離線超過 1 分鐘"
+          runbook_url: "https://wiki.yourcompany.com/runbooks/jojo-trading-down"
+
+      # 高 CPU 使用率告警
+      - alert: JoJoTradingHighCPU
+        expr: rate(container_cpu_usage_seconds_total{container="jojo-trading"}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: jojo-trading
+        annotations:
+          summary: "JoJo Trading CPU 使用率過高"
+          description: "JoJo Trading CPU 使用率已超過 80% 持續 5 分鐘，當前值: {{ $value }}%"
+
+      # 高記憶體使用率告警
+      - alert: JoJoTradingHighMemory
+        expr: (container_memory_usage_bytes{container="jojo-trading"} / container_spec_memory_limit_bytes{container="jojo-trading"}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          service: jojo-trading
+        annotations:
+          summary: "JoJo Trading 記憶體使用率過高"
+          description: "JoJo Trading 記憶體使用率已超過 85% 持續 5 分鐘，當前值: {{ $value }}%"
+
+      # 高回應時間告警
+      - alert: JoJoTradingHighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="jojo-trading"}[5m])) > 2
+        for: 3m
+        labels:
+          severity: warning
+          service: jojo-trading
+        annotations:
+          summary: "JoJo Trading 回應時間過長"
+          description: "JoJo Trading 95% 請求回應時間超過 2 秒，當前值: {{ $value }}s"
+
+      # 錯誤率告警
+      - alert: JoJoTradingHighErrorRate
+        expr: rate(http_requests_total{job="jojo-trading",status=~"5.."}[5m]) / rate(http_requests_total{job="jojo-trading"}[5m]) * 100 > 5
+        for: 5m
+        labels:
+          severity: critical
+          service: jojo-trading
+        annotations:
+          summary: "JoJo Trading 錯誤率過高"
+          description: "JoJo Trading 5xx 錯誤率已超過 5% 持續 5 分鐘，當前值: {{ $value }}%"
+
+      # 磁碟空間不足告警
+      - alert: JoJoTradingLowDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+          service: jojo-trading
+        annotations:
+          summary: "JoJo Trading 磁碟空間不足"
+          description: "JoJo Trading 磁碟可用空間低於 15%，當前值: {{ $value }}%"
+
+      # Pod 重啟頻繁告警
+      - alert: JoJoTradingPodRestartingTooOften
+        expr: rate(kube_pod_container_status_restarts_total{container="jojo-trading"}[15m]) * 60 * 15 > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: jojo-trading
+        annotations:
+          summary: "JoJo Trading Pod 重啟頻繁"
+          description: "JoJo Trading Pod 在過去 15 分鐘內重啟超過 5 次"
+
+      # Redis 連接問題告警
+      - alert: JoJoTradingRedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis 服務不可用"
+          description: "Redis 服務已離線超過 1 分鐘，可能影響 JoJo Trading 快取功能"
+
+      # 資料庫連接告警
+      - alert: JoJoTradingDatabaseConnectionFailure
+        expr: increase(database_connection_errors_total{job="jojo-trading"}[5m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+          service: jojo-trading
+        annotations:
+          summary: "JoJo Trading 資料庫連接失敗"
+          description: "JoJo Trading 在過去 5 分鐘內資料庫連接失敗超過 10 次"
+
+      # API 配額用盡告警
+      - alert: JoJoTradingAPIQuotaExceeded
+        expr: api_quota_remaining{service="finmind"} < 100
+        for: 1m
+        labels:
+          severity: warning
+          service: jojo-trading
+        annotations:
+          summary: "FinMind API 配額即將用盡"
+          description: "FinMind API 剩餘配額低於 100 次，當前值: {{ $value }}"
+
+      # SSL 證書過期告警
+      - alert: JoJoTradingSSLCertExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 86400 * 7
+        for: 1h
+        labels:
+          severity: warning
+          service: jojo-trading
+        annotations:
+          summary: "JoJo Trading SSL 證書即將過期"
+          description: "JoJo Trading SSL 證書將在 7 天內過期"
+
+  - name: business_metrics_alerts
+    rules:
+      # 業務指標告警
+      - alert: JoJoTradingLowUserActivity
+        expr: rate(user_requests_total{job="jojo-trading"}[1h]) < 10
+        for: 30m
+        labels:
+          severity: info
+          service: jojo-trading
+        annotations:
+          summary: "JoJo Trading 用戶活動度較低"
+          description: "過去 1 小時內用戶請求數低於 10 次，可能需要檢查服務推廣"
+
+      # DCF 計算性能告警
+      - alert: JoJoTradingSlowDCFCalculation
+        expr: histogram_quantile(0.95, rate(dcf_calculation_duration_seconds_bucket{job="jojo-trading"}[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: jojo-trading
+        annotations:
+          summary: "DCF 計算速度過慢"
+          description: "95% 的 DCF 計算時間超過 5 秒，可能需要優化演算法"
+
+      # 資料更新延遲告警
+      - alert: JoJoTradingDataUpdateDelay
+        expr: time() - last_data_update_timestamp{job="jojo-trading"} > 3600
+        for: 10m
+        labels:
+          severity: warning
+          service: jojo-trading
+        annotations:
+          summary: "JoJo Trading 資料更新延遲"
+          description: "財務資料更新延遲超過 1 小時，可能影響分析準確性"
