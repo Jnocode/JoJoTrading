@@ -95,8 +95,7 @@ class EnhancedIndividualDCFComponent:
           # 根據是否啟用自動抓取顯示不同界面
         if auto_fetch and stock_code and self.auto_fetch_available:
             return self._render_auto_data_panel(stock_code)
-        else:
-            # 確保 stock_code 不為 None，如果為 None 則使用預設值
+        else:            # 確保 stock_code 不為 None，如果為 None 則使用預設值
             safe_stock_code = stock_code if stock_code else self.default_values['stock_code']
             return self._render_manual_input_panel(safe_stock_code)
     
@@ -115,13 +114,14 @@ class EnhancedIndividualDCFComponent:
                     st.session_state.last_fetched_stock = stock_code
                     st.success(f"✅ 成功抓取 {dcf_data['company_name']} 的數據！")
                     
-                    # 顯示數據摘要
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
+                    # 顯示數據摘要（不使用嵌套列）
+                    st.markdown("**數據摘要:**")
+                    metric_cols = st.columns(3)
+                    with metric_cols[0]:
                         st.metric("股價", f"${dcf_data['current_market_price']:.2f}")
-                    with col2:
+                    with metric_cols[1]:
                         st.metric("淨利", f"{dcf_data['net_income_parent']/1e8:.1f}億")
-                    with col3:
+                    with metric_cols[2]:
                         st.metric("品質", f"{dcf_data['data_quality_score']:.0f}%")
                 else:
                     st.error(f"❌ 數據抓取失敗: {dcf_data.get('error', '未知錯誤')}")

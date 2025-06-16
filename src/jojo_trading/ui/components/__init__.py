@@ -7,7 +7,7 @@ __version__ = "1.0.0"
 __author__ = "JoJo Trading System"
 
 from .individual_dcf import IndividualDCFComponent
-from .enhanced_individual_dcf import EnhancedIndividualDCFComponent
+from .enhanced_individual_dcf_fixed import FixedEnhancedIndividualDCFComponent as EnhancedIndividualDCFComponent
 from .sector_screening import SectorScreeningComponent
 from .common_widgets import CommonWidgets
 
