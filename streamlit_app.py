@@ -325,21 +325,21 @@ def render_quick_actions():
     
     with col1:
         if st.button("🎯 開始 DCF 估值分析", type="primary", use_container_width=True):
-            st.switch_page("pages/enhanced/02_📊_DCF_Calculator.py")
+            st.switch_page("pages/📊_DCF估值計算.py")
     
     with col2:
         if st.button("📈 開始技術分析", type="secondary", use_container_width=True):
-            st.switch_page("pages/enhanced/03_📈_Technical_Analysis.py")
+            st.switch_page("pages/📈_技術分析.py")
     
     col3, col4 = st.columns(2)
     
     with col3:
         if st.button("💼 投資組合管理", use_container_width=True):
-            st.switch_page("pages/enhanced/04_💼_Portfolio_Manager.py")
+            st.switch_page("pages/💼_投資組合管理.py")
     
     with col4:
         if st.button("📊 返回儀表板", use_container_width=True):
-            st.switch_page("pages/enhanced/01_🏠_Dashboard.py")
+            st.switch_page("pages/🏠_儀表板.py")
 
 def render_news_and_updates():
     """渲染新聞和更新"""
