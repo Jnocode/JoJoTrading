@@ -7,10 +7,13 @@
 import os
 import json
 import logging
+import time
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, Callable
 from datetime import datetime, timedelta
 import pandas as pd
+import requests
+from requests.exceptions import RequestException, Timeout, ConnectionError
 
 
 def setup_logging(
@@ -218,10 +221,100 @@ class ConfigValidator:
         return True, "配置驗證通過"
 
 
-# 常用常數
+# 常用常數（需要在函數定義之前）
 DEFAULT_CACHE_TTL = 3600  # 1小時
 MAX_RETRY_ATTEMPTS = 3
 DEFAULT_TIMEOUT = 30
+RETRY_BACKOFF_FACTOR = 2  # 指數退避因子
+RETRY_STATUS_CODES = [408, 429, 500, 502, 503, 504]  # 需要重試的 HTTP 狀態碼
+
+
+def api_request_with_retry(
+    url: str,
+    method: str = 'GET',
+    timeout: int = DEFAULT_TIMEOUT,
+    max_retries: int = MAX_RETRY_ATTEMPTS,
+    backoff_factor: float = RETRY_BACKOFF_FACTOR,
+    verify: bool = False,
+    **kwargs
+) -> requests.Response:
+    """
+    帶有智能重試機制的 API 請求函數
+    
+    Args:
+        url: 請求的 URL
+        method: HTTP 方法 (GET, POST, PUT, DELETE 等)
+        timeout: 請求超時時間（秒）
+        max_retries: 最大重試次數
+        backoff_factor: 指數退避因子（每次重試等待時間倍增）
+        verify: 是否驗證 SSL 證書
+        **kwargs: 傳遞給 requests 的其他參數
+    
+    Returns:
+        requests.Response: API 響應物件
+    
+    Raises:
+        RequestException: 當所有重試都失敗時
+    
+    範例:
+        >>> response = api_request_with_retry('https://api.example.com/data')
+        >>> data = response.json()
+    """
+    logger = logging.getLogger(__name__)
+    
+    for attempt in range(max_retries):
+        try:
+            # 計算重試等待時間（指數退避）
+            if attempt > 0:
+                wait_time = backoff_factor ** attempt
+                logger.info(f"第 {attempt + 1} 次重試，等待 {wait_time:.1f} 秒...")
+                time.sleep(wait_time)
+            
+            # 發送請求
+            logger.debug(f"發送 {method} 請求到: {url} (嘗試 {attempt + 1}/{max_retries})")
+            response = requests.request(
+                method=method,
+                url=url,
+                timeout=timeout,
+                verify=verify,
+                **kwargs
+            )
+            
+            # 檢查狀態碼
+            if response.status_code in RETRY_STATUS_CODES:
+                logger.warning(
+                    f"收到可重試的狀態碼 {response.status_code}，"
+                    f"剩餘重試次數: {max_retries - attempt - 1}"
+                )
+                if attempt < max_retries - 1:
+                    continue
+            
+            # 請求成功，拋出異常如果狀態碼不是 2xx
+            response.raise_for_status()
+            logger.debug(f"請求成功: {url}")
+            return response
+            
+        except Timeout as e:
+            logger.warning(f"請求超時 (嘗試 {attempt + 1}/{max_retries}): {e}")
+            if attempt >= max_retries - 1:
+                logger.error(f"達到最大重試次數，放棄請求: {url}")
+                raise RequestException(f"API 請求超時，已重試 {max_retries} 次: {url}") from e
+                
+        except ConnectionError as e:
+            logger.warning(f"連線錯誤 (嘗試 {attempt + 1}/{max_retries}): {e}")
+            if attempt >= max_retries - 1:
+                logger.error(f"達到最大重試次數，放棄請求: {url}")
+                raise RequestException(f"無法連線到 API，已重試 {max_retries} 次: {url}") from e
+                
+        except RequestException as e:
+            logger.warning(f"請求錯誤 (嘗試 {attempt + 1}/{max_retries}): {e}")
+            if attempt >= max_retries - 1:
+                logger.error(f"達到最大重試次數，放棄請求: {url}")
+                raise
+    
+    # 理論上不應該到達這裡
+    raise RequestException(f"API 請求失敗: {url}")
+
 
 # 導出的函數列表
 __all__ = [
@@ -239,5 +332,6 @@ __all__ = [
     'calculate_date_range',
     'clean_financial_data',
     'merge_dataframes',
+    'api_request_with_retry',
     'ConfigValidator'
 ]

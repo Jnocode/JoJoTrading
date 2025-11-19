@@ -29,6 +29,7 @@ import pandas as pd
 from enum import Enum, auto
 import json # For loading industries.json
 import requests # Added to resolve NameError
+from ..utils.helpers import api_request_with_retry
 import sys
 from pathlib import Path
 
@@ -256,14 +257,13 @@ class DataFetchState(State):
         print(f"  (DataFetchState) 正在獲取所有上市公司每日股價資料...")
         if not self.context.get('all_stock_prices_openapi_data'):
             try:
-                print(f"    (DataFetchState) 警告：將嘗試禁用 SSL 憑證驗證 (verify=False) 來獲取股價。")
-                response = requests.get(f"{data_handler.API_BASE_URL}/t187ap03_L", timeout=20, verify=False) # Re-using the all companies endpoint for prices for now
-                response.raise_for_status()
-                self.context['all_stock_prices_openapi_data'] = response.json() # This needs to be actual price data endpoint
-                print(f"    (DataFetchState) 成功獲取 {len(self.context['all_stock_prices_openapi_data'])} 筆股價記錄。") # This log might be misleading
+                print(f"    (DataFetchState) 使用智能重試機制獲取股價...")
+                response = api_request_with_retry(f"{data_handler.API_BASE_URL}/t187ap03_L", timeout=30, verify=False)
+                self.context['all_stock_prices_openapi_data'] = response.json()
+                print(f"    (DataFetchState) 成功獲取 {len(self.context['all_stock_prices_openapi_data'])} 筆股價記錄。")
             except Exception as e:
                 print(f"    (DataFetchState) 獲取股價時發生錯誤: {e}")
-                self.context['all_stock_prices_openapi_data'] = [] # Ensure it's an empty list on error
+                self.context['all_stock_prices_openapi_data'] = []
 
         print(f"  開始為產業 '{selected_industry_name}' 處理資料...")
         print(f"  篩選後成分股詳細列表 ({selected_industry_name}):")
