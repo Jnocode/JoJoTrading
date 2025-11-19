@@ -1,0 +1,3 @@
+﻿stock_code,intrinsic_value_per_share,current_market_price,potential_return,data_year_quarter,source_eps,calculated_fcf_eps,used_discount_rate,used_short_term_growth,used_terminal_growth,net_income_source_field,name
+1582,272.58,90.7,2.0052,2024-12-31,1.56,3.24,0.04,0.07,0.025,EquityAttributableToOwnersOfParent,信錦
+2059,1883.56,1550.0,0.2152,2024-12-31,22.63,22.36,0.04,0.07,0.025,IncomeFromContinuingOperations,川湖

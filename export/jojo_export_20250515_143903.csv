@@ -1,0 +1,4 @@
+﻿stock_code,intrinsic_value_per_share,current_market_price,potential_return,data_year_quarter,source_eps,calculated_fcf_eps,used_discount_rate,used_short_term_growth,used_terminal_growth,net_income_source_field,name
+1471,18.36,10.5,0.7482,2025-03-31,0.25,0.22,0.04,0.07,0.025,EquityAttributableToOwnersOfParent,首利
+1582,123.54,93.8,0.3171,2025-03-31,1.05,1.47,0.04,0.07,0.025,IncomeFromContinuingOperations,信錦
+2059,2178.61,1650.0,0.3204,2025-03-31,26.35,25.87,0.04,0.07,0.025,EquityAttributableToOwnersOfParent,川湖
