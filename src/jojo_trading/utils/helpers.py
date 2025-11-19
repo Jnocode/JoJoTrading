@@ -236,6 +236,7 @@ def api_request_with_retry(
     max_retries: int = MAX_RETRY_ATTEMPTS,
     backoff_factor: float = RETRY_BACKOFF_FACTOR,
     verify: bool = False,
+    enable_metrics: bool = True,
     **kwargs
 ) -> requests.Response:
     """
@@ -248,6 +249,7 @@ def api_request_with_retry(
         max_retries: 最大重試次數
         backoff_factor: 指數退避因子（每次重試等待時間倍增）
         verify: 是否驗證 SSL 證書
+        enable_metrics: 是否啟用指標收集（預設 True）
         **kwargs: 傳遞給 requests 的其他參數
     
     Returns:
@@ -261,6 +263,21 @@ def api_request_with_retry(
         >>> data = response.json()
     """
     logger = logging.getLogger(__name__)
+    
+    # 取得指標收集器（如果啟用）
+    metrics_collector = None
+    if enable_metrics:
+        try:
+            from .metrics import get_metrics_collector
+            metrics_collector = get_metrics_collector()
+        except ImportError:
+            logger.debug("指標模組未安裝，跳過指標收集")
+    
+    # 記錄開始時間
+    start_time = time.time()
+    retry_count = 0
+    last_error = None
+    last_status_code = None
     
     for attempt in range(max_retries):
         try:
@@ -292,27 +309,101 @@ def api_request_with_retry(
             # 請求成功，拋出異常如果狀態碼不是 2xx
             response.raise_for_status()
             logger.debug(f"請求成功: {url}")
+            
+            # 記錄成功的指標
+            if metrics_collector:
+                duration = time.time() - start_time
+                metrics_collector.record_api_request(
+                    url=url,
+                    method=method,
+                    status_code=response.status_code,
+                    duration=duration,
+                    retry_count=retry_count,
+                    success=True
+                )
+            
             return response
             
         except Timeout as e:
+            retry_count += 1
+            last_error = 'Timeout'
             logger.warning(f"請求超時 (嘗試 {attempt + 1}/{max_retries}): {e}")
             if attempt >= max_retries - 1:
                 logger.error(f"達到最大重試次數，放棄請求: {url}")
+                
+                # 記錄失敗的指標
+                if metrics_collector:
+                    duration = time.time() - start_time
+                    metrics_collector.record_api_request(
+                        url=url,
+                        method=method,
+                        status_code=None,
+                        duration=duration,
+                        retry_count=retry_count - 1,
+                        success=False,
+                        error_type='Timeout'
+                    )
+                
                 raise RequestException(f"API 請求超時，已重試 {max_retries} 次: {url}") from e
                 
         except ConnectionError as e:
+            retry_count += 1
+            last_error = 'ConnectionError'
             logger.warning(f"連線錯誤 (嘗試 {attempt + 1}/{max_retries}): {e}")
             if attempt >= max_retries - 1:
                 logger.error(f"達到最大重試次數，放棄請求: {url}")
+                
+                # 記錄失敗的指標
+                if metrics_collector:
+                    duration = time.time() - start_time
+                    metrics_collector.record_api_request(
+                        url=url,
+                        method=method,
+                        status_code=None,
+                        duration=duration,
+                        retry_count=retry_count - 1,
+                        success=False,
+                        error_type='ConnectionError'
+                    )
+                
                 raise RequestException(f"無法連線到 API，已重試 {max_retries} 次: {url}") from e
                 
         except RequestException as e:
+            retry_count += 1
+            last_error = type(e).__name__
+            last_status_code = getattr(e.response, 'status_code', None) if hasattr(e, 'response') else None
             logger.warning(f"請求錯誤 (嘗試 {attempt + 1}/{max_retries}): {e}")
             if attempt >= max_retries - 1:
                 logger.error(f"達到最大重試次數，放棄請求: {url}")
+                
+                # 記錄失敗的指標
+                if metrics_collector:
+                    duration = time.time() - start_time
+                    metrics_collector.record_api_request(
+                        url=url,
+                        method=method,
+                        status_code=last_status_code,
+                        duration=duration,
+                        retry_count=retry_count - 1,
+                        success=False,
+                        error_type=last_error
+                    )
+                
                 raise
     
-    # 理論上不應該到達這裡
+    # 理論上不應該到達這裡，但如果到達，記錄失敗指標
+    if metrics_collector:
+        duration = time.time() - start_time
+        metrics_collector.record_api_request(
+            url=url,
+            method=method,
+            status_code=last_status_code,
+            duration=duration,
+            retry_count=retry_count,
+            success=False,
+            error_type=last_error or 'Unknown'
+        )
+    
     raise RequestException(f"API 請求失敗: {url}")
 
 

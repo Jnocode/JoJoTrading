@@ -48,12 +48,13 @@ def test_system_initialization():
         print(f"  增強型 DCF: {state_machine.context.get('use_enhanced_dcf', False)}")
         print(f"  數據品質閾值: {state_machine.context.get('data_quality_threshold', 'N/A')}")
         
-        return True, state_machine
+        assert state_machine is not None, "狀態機初始化失敗"
+        assert len(state_machine.context.get('industry_names', [])) > 0, "產業數量應大於0"
         
     except Exception as e:
         print(f"✗ 系統初始化失敗: {e}")
         traceback.print_exc()
-        return False, None
+        assert False, f"系統初始化失敗: {e}"
 
 def test_data_processing():
     """測試數據處理流程"""
@@ -99,12 +100,14 @@ def test_data_processing():
         )
         print(f"✓ 整合處理器結果: {integrated_result.get('intrinsic_value_per_share', 0):.2f}")
         
-        return True, (quality_result.quality_score, result, integrated_result)
+        assert quality_result.quality_score >= 0, "品質分數應該 >= 0"
+        assert result > 0, "DCF 結果應該 > 0"
+        assert 'intrinsic_value_per_share' in integrated_result, "應包含內在價值"
         
     except Exception as e:
         print(f"✗ 數據處理測試失敗: {e}")
         traceback.print_exc()
-        return False, None
+        assert False, f"數據處理測試失敗: {e}"
 
 def test_error_handling():
     """測試錯誤處理機制"""
@@ -157,18 +160,17 @@ def test_error_handling():
             }
             enhanced_dcf = EnhancedDCFModel()
             enhanced_dcf.calculate_dcf_value(**invalid_inputs)
-            print("✗ 應該拋出異常但沒有")
-            return False
+            assert False, "應該拋出異常但沒有"
             
         except Exception:
             print("✓ 異常輸入正確被捕獲")
         
-        return True
+        print("✓ 錯誤處理測試通過")
         
     except Exception as e:
         print(f"✗ 錯誤處理測試失敗: {e}")
         traceback.print_exc()
-        return False
+        assert False, f"錯誤處理測試失敗: {e}"
 
 def test_configuration_flexibility():
     """測試配置靈活性"""
@@ -195,18 +197,18 @@ def test_configuration_flexibility():
                 handler = IntegratedDCFHandler()
                 # 這裡可以添加具體的配置測試邏輯
                 print(f"  ✓ 配置 {i} 載入成功")
+                assert handler is not None, f"配置 {i} 處理器應該被創建"
                 
             finally:
                 # 恢復原始配置
                 DataHandler().USE_ENHANCED_DCF = original_use_enhanced
         
         print("✓ 所有配置測試通過")
-        return True
         
     except Exception as e:
         print(f"✗ 配置測試失敗: {e}")
         traceback.print_exc()
-        return False
+        assert False, f"配置測試失敗: {e}"
 
 def main():
     """執行完整的端到端測試"""

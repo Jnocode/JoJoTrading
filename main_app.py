@@ -69,21 +69,37 @@ def main():
     st.sidebar.title("🚀 JoJo Trading")
     st.sidebar.markdown("---")
     
+    # 初始化 session state
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = "🏠 首頁"
+    
+    # 頁面選項
+    page_options = ["🏠 首頁", "📊 DCF估值分析", "🎯 智能交易系統", "⚙️ 系統設定"]
+    
+    # 確保 session_state 中的頁面在選項中
+    if st.session_state.current_page not in page_options:
+        st.session_state.current_page = "🏠 首頁"
+    
     # 頁面選擇
     page = st.sidebar.selectbox(
         "選擇功能頁面",
-        ["🏠 首頁", "📊 DCF估值分析", "🎯 智能交易系統", "⚙️ 系統設定"],
-        index=0
+        page_options,
+        index=page_options.index(st.session_state.current_page),
+        key="page_selector"
     )
     
+    # 更新 session state
+    if page != st.session_state.current_page:
+        st.session_state.current_page = page
+    
     # 顯示選擇的頁面
-    if page == "🏠 首頁":
+    if st.session_state.current_page == "🏠 首頁":
         show_home_page()
-    elif page == "📊 DCF估值分析":
+    elif st.session_state.current_page == "📊 DCF估值分析":
         show_dcf_page()
-    elif page == "🎯 智能交易系統":
+    elif st.session_state.current_page == "🎯 智能交易系統":
         show_trading_page()
-    elif page == "⚙️ 系統設定":
+    elif st.session_state.current_page == "⚙️ 系統設定":
         show_settings_page()
 
 def show_home_page():
@@ -127,8 +143,7 @@ def show_home_page():
         - **風險控制**: 停損停利和部位管理
         - **績效追蹤**: 實時交易績效分析
         """)
-    
-    # 快速開始
+      # 快速開始
     st.markdown("---")
     st.markdown("## 🚀 快速開始")
     
@@ -136,12 +151,12 @@ def show_home_page():
     
     with col1:
         if st.button("📊 開始DCF分析", use_container_width=True):
-            st.session_state.page = "DCF估值分析"
+            st.session_state.current_page = "📊 DCF估值分析"
             st.rerun()
     
     with col2:
         if st.button("🎯 啟動交易系統", use_container_width=True):
-            st.session_state.page = "智能交易系統"
+            st.session_state.current_page = "🎯 智能交易系統"
             st.rerun()
 
 def show_dcf_page():

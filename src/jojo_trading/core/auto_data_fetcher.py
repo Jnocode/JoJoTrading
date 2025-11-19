@@ -35,6 +35,7 @@ try:
     # 導入 data_handler 模組 (函數式而非類別式)
     from src.jojo_trading.core import data_handler
     from src.jojo_trading.core.state_machine import DataFetchState, JoJoStateMachine
+    from src.jojo_trading.core.financial_quality_checker import FinancialDataQualityChecker
     print("✅ 成功導入所有必要模組")
 except ImportError as e:
     print(f"⚠️ 模組導入警告: {e}")
@@ -47,11 +48,13 @@ except ImportError as e:
         sys.path.append(project_root)
         from . import data_handler
         from .state_machine import DataFetchState, JoJoStateMachine
+        from .financial_quality_checker import FinancialDataQualityChecker
         print("✅ 使用替代路徑成功導入模組")
     except ImportError:
         data_handler = None
         DataFetchState = None
         JoJoStateMachine = None
+        FinancialDataQualityChecker = None
         print("❌ 無法導入必要模組，將使用備用方案")
 
 class AutoDataFetcher:
@@ -66,6 +69,15 @@ class AutoDataFetcher:
         self.data_handler = data_handler  # 使用模組而非類別
         self.company_data = {}
         self.cache_enabled = True
+        
+        # 初始化財務品質檢測器
+        try:
+            self.quality_checker = FinancialDataQualityChecker() if FinancialDataQualityChecker else None
+            if self.quality_checker:
+                print("✅ 財務品質檢測器初始化成功")
+        except Exception as e:
+            print(f"⚠️ 財務品質檢測器初始化失敗: {e}")
+            self.quality_checker = None
         
         try:
             if data_handler is not None:
@@ -534,11 +546,83 @@ class AutoDataFetcher:
             'data_quality_score': data.get('data_quality_score', 0),
             'data_sources': raw_data['data_sources'],
             'last_updated': raw_data['last_updated']        }
-        
-        # 添加營運資金項目
+          # 添加營運資金項目
         working_capital_items = ['ar_t0', 'inv_t0', 'ap_t0', 'ar_t1', 'inv_t1', 'ap_t1']
         for item in working_capital_items:
             dcf_data[item] = data.get(item, 0)
+          # 執行財務品質檢測
+        if self.quality_checker:
+            try:
+                print(f"  🔍 執行財務品質檢測...")
+                quality_check = self.quality_checker.detect_one_time_items(data, verbose=True)
+                
+                # 🏢 增強版處分資產專項檢測
+                print(f"  🏢 執行處分資產專項檢測...")
+                disposal_analysis = self.quality_checker.detect_asset_disposal_specifically(data, verbose=True)
+                
+                # 綜合調整財務數據
+                adjustment_applied = False
+                net_income_original = data.get('net_income_parent', 0)
+                adjusted_net_income = net_income_original
+                
+                # 如果發現一般異常，調整財務數據
+                if quality_check['has_anomalies']:
+                    adjusted_data = self.quality_checker.adjust_financial_data(data, quality_check)
+                    adjusted_net_income = adjusted_data['net_income_parent']
+                    adjustment_applied = True
+                
+                # 如果發現處分資產收益，進一步調整
+                if disposal_analysis['disposal_detected']:
+                    core_earnings = disposal_analysis.get('core_earnings_adjustment', {})
+                    if core_earnings and core_earnings.get('adjusted_net_income'):
+                        # 使用更保守的調整結果
+                        disposal_adjusted = core_earnings['adjusted_net_income']
+                        if abs(disposal_adjusted - net_income_original) > abs(adjusted_net_income - net_income_original):
+                            adjusted_net_income = disposal_adjusted
+                            adjustment_applied = True
+                
+                # 更新 DCF 數據
+                if adjustment_applied:
+                    dcf_data['net_income_parent'] = adjusted_net_income
+                    dcf_data['net_income_parent_original'] = net_income_original
+                    dcf_data['data_adjustment_applied'] = True
+                    
+                    # 詳細的調整原因
+                    adjustment_reasons = []
+                    if quality_check['has_anomalies']:
+                        adjustment_reasons.append("一次性業外收入")
+                    if disposal_analysis['disposal_detected']:
+                        adjustment_reasons.append("處分資產收益")
+                    
+                    dcf_data['adjustment_reason'] = f"已調整{', '.join(adjustment_reasons)}影響"
+                    
+                    print(f"  ⚠️ 檢測到財務異常，已自動調整數據")
+                    print(f"    原始淨利: {net_income_original/1e8:.1f}億元")
+                    print(f"    調整淨利: {adjusted_net_income/1e8:.1f}億元")
+                    print(f"    調整幅度: {(adjusted_net_income-net_income_original)/net_income_original*100:.1f}%")
+                
+                # 添加品質指標
+                dcf_data['data_quality_score'] = quality_check['quality_score'] - disposal_analysis['quality_impact']
+                dcf_data['anomaly_items'] = quality_check['anomaly_items'] + disposal_analysis['disposal_items']
+                dcf_data['quality_warnings'] = quality_check['warnings'] + disposal_analysis['disposal_warnings']
+                
+                # 添加處分資產專項分析結果
+                dcf_data['disposal_analysis'] = disposal_analysis
+                
+                # 添加估值建議（結合一般建議和處分資產建議）
+                general_recommendations = self.quality_checker.get_valuation_recommendations(quality_check)
+                disposal_recommendations = self.quality_checker.generate_disposal_recommendations(disposal_analysis)
+                valuation_recommendations = general_recommendations + disposal_recommendations
+                dcf_data['valuation_recommendations'] = valuation_recommendations
+                
+                if valuation_recommendations:
+                    print(f"  💡 估值建議:")
+                    for rec in valuation_recommendations[:2]:  # 只顯示前兩條
+                        print(f"    • {rec}")
+                
+            except Exception as e:
+                print(f"  ⚠️ 財務品質檢測失敗: {str(e)}")
+                dcf_data['quality_check_error'] = str(e)
         
         return dcf_data
     

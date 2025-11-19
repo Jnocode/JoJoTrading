@@ -1,56 +1,601 @@
 """
-DCF Valuation Analysis Page
-整合的DCF估值分析系統介面
+DCF估值分析頁面
+統一的DCF估值分析介面 - 個股分析和類股篩選
+使用自動資料抓取，提供真實財務數據驅動的DCF計算
 """
 
 import streamlit as st
+import pandas as pd
 import sys
-import os
+from pathlib import Path
 
-# 確保能夠導入模組
-parent_dir = os.path.dirname(os.path.dirname(__file__))
-src_path = os.path.join(parent_dir, 'src')
-if src_path not in sys.path:
-    sys.path.insert(0, src_path)
+# 添加項目路徑
+current_dir = Path(__file__).parent
+project_root = current_dir.parent
+src_path = project_root / "src"
+if src_path.exists():
+    sys.path.insert(0, str(src_path))
+
+# 嘗試導入自動資料抓取器
+try:
+    from jojo_trading.core.auto_data_fetcher import AutoDataFetcher
+    AUTO_DATA_FETCHER_AVAILABLE = True
+    print("✅ AutoDataFetcher 導入成功")
+except ImportError as e:
+    AUTO_DATA_FETCHER_AVAILABLE = False
+    print(f"❌ AutoDataFetcher 導入失敗: {e}")
+
+# 嘗試導入類股篩選組件
+try:
+    from jojo_trading.ui.components.sector_screening import SectorScreeningComponent
+    SECTOR_SCREENING_AVAILABLE = True
+except ImportError:
+    SECTOR_SCREENING_AVAILABLE = False
+
+# 嘗試導入行業特定參數
+try:
+    from jojo_trading.core.industry_dcf_params import (
+        get_industry_params, 
+        get_adjusted_screening_params, 
+        get_stock_specific_params,
+        INDUSTRY_DCF_PARAMS
+    )
+    INDUSTRY_PARAMS_AVAILABLE = True
+    print("✅ 行業特定DCF參數模組載入成功")
+except ImportError as e:
+    INDUSTRY_PARAMS_AVAILABLE = False
+    print(f"❌ 行業特定DCF參數模組載入失敗: {e}")
+
+# 嘗試導入資料替代方案管理器
+try:
+    from jojo_trading.core.data_fallback_manager import DataFallbackManager
+    DATA_FALLBACK_AVAILABLE = True
+    print("✅ 資料替代方案管理器載入成功")
+except ImportError as e:
+    DATA_FALLBACK_AVAILABLE = False
+    print(f"❌ 資料替代方案管理器載入失敗: {e}")
+
+# 設置頁面配置
+st.set_page_config(
+    page_title="DCF 分析 - JoJo Trading",
+    page_icon="📊",
+    layout="wide"
+)
+
+# 設置頁面配置
+st.set_page_config(
+    page_title="DCF 分析 - JoJo Trading",
+    page_icon="📊",
+    layout="wide"
+)
+
+# 初始化自動資料抓取器
+@st.cache_resource
+def init_auto_data_fetcher():
+    """初始化並快取自動資料抓取器"""
+    if AUTO_DATA_FETCHER_AVAILABLE:
+        try:
+            fetcher = AutoDataFetcher()
+            return fetcher
+        except Exception as e:
+            st.error(f"AutoDataFetcher 初始化失敗: {e}")
+            return None
+    return None
+
+auto_fetcher = init_auto_data_fetcher()
+
+def get_stock_data_from_auto_fetcher(stock_code):
+    """使用自動資料抓取器獲取股票財務數據 - 增強版含多資料源切換"""
+    if not auto_fetcher:
+        # 降級使用虛擬資料
+        return get_stock_data_fallback(stock_code)
+    
+    try:
+        # 首先嘗試標準的資料抓取
+        dcf_data = auto_fetcher.get_dcf_ready_data(stock_code)
+        
+        # 如果標準抓取失敗，使用增強版多資料源抓取
+        if not dcf_data.get('success', False):
+            st.warning(f"⚠️ 標準資料抓取失敗，嘗試多資料源切換...")
+            
+            if DATA_FALLBACK_AVAILABLE:
+                fallback_manager = DataFallbackManager(auto_fetcher)
+                dcf_data = fallback_manager.get_enhanced_data_with_fallback(stock_code)
+                
+                if dcf_data and dcf_data.get('success'):
+                    st.info(f"✅ 成功從 {dcf_data.get('data_source', '替代資料源')} 獲取資料")
+                else:
+                    st.error(f"❌ 所有資料源都失敗，使用備用資料")
+                    return get_stock_data_fallback(stock_code)
+            else:
+                return get_stock_data_fallback(stock_code)
+        
+        # 使用增強版資料處理（包含替代方案）
+        if DATA_FALLBACK_AVAILABLE:
+            fallback_manager = DataFallbackManager(auto_fetcher)
+            enhanced_fcf_data = fallback_manager.calculate_enhanced_free_cash_flow(stock_code, dcf_data)
+            
+            # 顯示資料品質資訊
+            data_quality = enhanced_fcf_data['data_quality']
+            estimates_used = enhanced_fcf_data['estimates_used']
+            data_source = dcf_data.get('data_source', '自動抓取')
+            
+            if estimates_used:
+                st.info(f"📊 資料品質: {data_quality} | 資料源: {data_source} | 使用估算: {', '.join(estimates_used)}")
+            else:
+                st.success(f"📊 資料品質: {data_quality} | 資料源: {data_source} | 完整真實資料")
+            
+            free_cash_flow = enhanced_fcf_data['free_cash_flow']
+            net_income = enhanced_fcf_data['net_income']
+            capex = enhanced_fcf_data['capex']
+            depreciation = enhanced_fcf_data['depreciation']
+        else:
+            # 原始計算方式（當替代方案不可用時）
+            net_income = dcf_data.get('net_income_parent', 0) / 1e8  # 轉換為億元
+            depreciation = dcf_data.get('depreciation', 0) / 1e8
+            amortization = dcf_data.get('amortization', 0) / 1e8
+            capex = dcf_data.get('capex', 0) / 1e8
+            
+            # 簡化版營運資金變化計算 (可進一步優化)
+            working_capital_change = 0  # 暫時簡化
+            
+            free_cash_flow = net_income + depreciation + amortization - capex - working_capital_change
+            
+            # 資料缺失警告
+            missing_fields = []
+            if not dcf_data.get('capex'):
+                missing_fields.append('資本支出')
+            if not dcf_data.get('depreciation'):
+                missing_fields.append('折舊費用')
+            
+            if missing_fields:
+                st.warning(f"⚠️ 缺少關鍵欄位: {', '.join(missing_fields)}，可能影響計算準確性")
+        
+        # 轉換為 DCF 計算函數期望的格式
+        return {
+            "company_name": dcf_data.get('company_name', f'股票 {stock_code}'),
+            "free_cash_flow": max(free_cash_flow, 1.0),  # 確保非負值
+            "current_price": dcf_data.get('current_market_price', 100),
+            "shares_outstanding": dcf_data.get('shares_outstanding', 100000000) / 1e8,  # 轉換為億股
+            "sector": "真實資料",  # 可從基本資料中獲取更詳細的產業分類
+            "data_source": "auto_fetcher",
+            "net_income": net_income,
+            "capex": capex,
+            "depreciation": depreciation
+        }
+        
+    except Exception as e:
+        st.error(f"❌ 自動抓取過程發生錯誤: {e}")
+        return get_stock_data_fallback(stock_code)
+
+def get_stock_data_fallback(stock_code):
+    """降級方案：虛擬資料庫"""
+    # 模擬數據庫，實際使用時可替換為真實API
+    stock_database = {
+        "2330": {"company_name": "台灣積體電路製造", "free_cash_flow": 800.5, "current_price": 580, "shares_outstanding": 259.3, "sector": "半導體"},
+        "2317": {"company_name": "鴻海精密", "free_cash_flow": 150.2, "current_price": 105, "shares_outstanding": 139.0, "sector": "電子"},
+        "2454": {"company_name": "聯發科技", "free_cash_flow": 45.8, "current_price": 920, "shares_outstanding": 15.9, "sector": "半導體"},
+        "2412": {"company_name": "中華電信", "free_cash_flow": 120.3, "current_price": 120, "shares_outstanding": 77.5, "sector": "電信"},
+        "2882": {"company_name": "國泰金控", "free_cash_flow": 280.1, "current_price": 55, "shares_outstanding": 106.7, "sector": "金融"},
+        "2881": {"company_name": "富邦金控", "free_cash_flow": 245.6, "current_price": 68, "shares_outstanding": 127.8, "sector": "金融"},
+        "2886": {"company_name": "兆豐金控", "free_cash_flow": 180.4, "current_price": 35, "shares_outstanding": 120.6, "sector": "金融"},
+        "2303": {"company_name": "聯電", "free_cash_flow": 35.2, "current_price": 48, "shares_outstanding": 124.3, "sector": "半導體"},
+        "2308": {"company_name": "台達電", "free_cash_flow": 42.1, "current_price": 340, "shares_outstanding": 26.0, "sector": "電子"},
+        "1301": {"company_name": "台塑", "free_cash_flow": 58.9, "current_price": 95, "shares_outstanding": 37.8, "sector": "塑膠"},
+        "2002": {"company_name": "中鋼", "free_cash_flow": 68.5, "current_price": 28, "shares_outstanding": 218.7, "sector": "鋼鐵"},
+        "2207": {"company_name": "和泰車", "free_cash_flow": 28.3, "current_price": 620, "shares_outstanding": 6.8, "sector": "汽車"},
+    }
+    
+    fallback_data = stock_database.get(stock_code, {
+        "company_name": f"公司代碼 {stock_code}",
+        "free_cash_flow": 50.0,
+        "current_price": 100,
+        "shares_outstanding": 100.0,
+        "sector": "其他"
+    })
+    fallback_data["data_source"] = "fallback"
+    return fallback_data
+
+def get_stock_data(stock_code):
+    """統一的股票資料獲取介面"""
+    return get_stock_data_from_auto_fetcher(stock_code)
+
+def calculate_dcf_with_potential_return(stock_data, growth_rate, terminal_growth, discount_rate, years=5):
+    """統一的DCF估值計算函數 - 返回潛在報酬率"""
+    current_fcf = stock_data["free_cash_flow"]
+    current_price = stock_data["current_price"]
+    shares_outstanding = stock_data["shares_outstanding"]
+    
+    if discount_rate <= terminal_growth:
+        return None, "折現率必須大於永續成長率"
+    
+    # 計算未來現金流的現值
+    present_values = []
+    fcf_projections = []
+    
+    for year in range(1, years + 1):
+        future_fcf = current_fcf * (1 + growth_rate/100)**year
+        present_value = future_fcf / (1 + discount_rate/100)**year
+        present_values.append(present_value)
+        fcf_projections.append({
+            '年度': f'第{year}年',
+            '預測現金流': f'{future_fcf:.1f}億',
+            '現值': f'{present_value:.1f}億',
+            '成長率': f'{growth_rate:.1f}%'
+        })
+    
+    # 計算終值
+    terminal_fcf = current_fcf * (1 + growth_rate/100)**years
+    terminal_value = terminal_fcf * (1 + terminal_growth/100) / ((discount_rate/100) - (terminal_growth/100))
+    terminal_pv = terminal_value / (1 + discount_rate/100)**years
+      # 企業總價值和每股內在價值
+    total_pv = sum(present_values)
+    enterprise_value = total_pv + terminal_pv
+    intrinsic_value_per_share = enterprise_value / shares_outstanding  # 億元 / 億股 = 元/股
+    
+    # 計算潛在報酬率
+    potential_return = ((intrinsic_value_per_share - current_price) / current_price) * 100
+    
+    # 計算當前市值
+    current_market_value = current_price * shares_outstanding / 100  # 元 * 億股 / 100 = 億元
+    
+    return {
+        'enterprise_value': enterprise_value,
+        'total_pv': total_pv,
+        'terminal_pv': terminal_pv,
+        'fcf_projections': fcf_projections,
+        'current_fcf': current_fcf,
+        'intrinsic_value_per_share': intrinsic_value_per_share,
+        'current_price': current_price,
+        'potential_return': potential_return,
+        'current_market_value': current_market_value,
+        'shares_outstanding': shares_outstanding,
+        'company_name': stock_data["company_name"],
+        'sector': stock_data["sector"]
+    }, None
+
+def get_all_stocks_for_screening():
+    """獲取所有股票用於類股篩選 - 使用自動資料抓取"""
+    # 台股主要股票清單
+    major_stocks = [
+        "2330", "2317", "2454", "2412", "2882", "2881", "2886", 
+        "2303", "2308", "1301", "2002", "2207", "2379", "3711",
+        "2357", "2345", "6505", "2382", "2395", "2409"
+    ]
+    
+    stocks_data = []
+    for stock_code in major_stocks:
+        try:
+            stock_data = get_stock_data(stock_code)
+            if stock_data:
+                # 添加股票代碼到資料中
+                stock_data['stock_code'] = stock_code
+                stocks_data.append(stock_data)
+        except Exception as e:
+            st.warning(f"⚠️ 獲取 {stock_code} 資料時發生錯誤: {e}")
+            continue
+    
+    return stocks_data
 
 # 頁面標題
 st.title("📊 DCF估值分析")
+st.markdown("**專業的DCF估值分析工具 - 統一算法，準確估值**")
 
-# 導航按鈕
-if st.button("⬅️ 返回主頁"):
-    st.switch_page("main_app.py")
+# 資料來源狀態顯示
+if AUTO_DATA_FETCHER_AVAILABLE and auto_fetcher:
+    st.success("🔄 **真實資料模式** - 使用 FinMind API 自動抓取即時財務數據")
+else:
+    st.warning("⚠️ **示範資料模式** - 使用虛擬資料，請檢查 AutoDataFetcher 模組")
 
-st.markdown("---")
+# 主要功能標籤頁
+tab1, tab2 = st.tabs(["📈 個股DCF分析", "🎯 類股篩選DCF"])
 
-try:
-    from jojo_trading.ui.app import main as dcf_main
-    
-    # 執行DCF分析應用
-    dcf_main()
-        
-except ImportError as e:
-    st.error(f"無法載入DCF分析模組: {e}")
-    st.write("請確認系統安裝正確。")
-    
-    # 提供基本的DCF分析介面
-    st.subheader("📈 基本DCF估值分析")
-    st.write("DCF分析模組暫時無法使用，這是一個簡化的介面。")
-    
-    # 簡單的DCF計算器
+with tab1:
+    st.markdown("### 🎯 找出個股的潛在報酬")
+    st.info("💡 輸入股票代碼，立即獲得基於DCF估值的潛在報酬率")
+
+    st.markdown("---")
+
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("輸入參數")
-        free_cash_flow = st.number_input("自由現金流 (億元)", value=10.0, step=0.1)
-        growth_rate = st.number_input("成長率 (%)", value=5.0, step=0.1) / 100
-        discount_rate = st.number_input("折現率 (%)", value=8.0, step=0.1) / 100
+        st.subheader("📈 輸入參數")
+        stock_code = st.text_input("股票代碼", placeholder="例如: 2330", help="請輸入台股股票代碼")
+          # 根據輸入的股票代碼動態調整預設參數
+        default_growth = 5.0
+        default_terminal = 2.0
+        default_discount = 8.0
+        industry_info = None
         
+        if stock_code and INDUSTRY_PARAMS_AVAILABLE:
+            # 先獲取股票資料以判斷行業
+            temp_stock_data = get_stock_data(stock_code)
+            if temp_stock_data:
+                sector = temp_stock_data.get('sector', '其他')
+                
+                # 嘗試獲取個股特定參數
+                try:
+                    stock_params = get_stock_specific_params(stock_code, sector)
+                    default_growth = stock_params['growth_rate']
+                    default_terminal = stock_params['terminal_growth']
+                    default_discount = stock_params['discount_rate']
+                    
+                    # 顯示參數來源資訊
+                    if stock_params['source'] == 'stock_specific':
+                        st.success(f"🎯 **個股特定參數** - {temp_stock_data.get('company_name', stock_code)}")
+                        st.info(f"📊 {stock_params['adjustment_reason']}")
+                    else:
+                        st.info(f"🏭 **行業參數**: {sector} | **風險等級**: {stock_params['volatility']}")
+                        st.caption(f"💡 {stock_params['description']}")
+                        
+                except Exception as e:
+                    # 降級使用行業參數
+                    industry_params = get_industry_params(sector)
+                    default_growth = industry_params['growth_rate']
+                    default_terminal = industry_params['terminal_growth']
+                    default_discount = industry_params['discount_rate']
+                    
+                    st.info(f"🏭 **行業**: {sector} | **風險等級**: {industry_params['volatility']}")
+                    st.caption(f"💡 {industry_params['description']}")
+        
+        st.markdown("**調整估值參數** (已根據行業自動調整)")
+        growth_rate = st.number_input("預期成長率 (%)", value=default_growth, step=0.1, 
+                                      help="未來5年的預期年成長率", min_value=-10.0, max_value=50.0)
+        terminal_growth = st.number_input("永續成長率 (%)", value=default_terminal, step=0.1, 
+                                          help="穩定期的長期成長率", min_value=0.0, max_value=10.0)
+        discount_rate = st.number_input("折現率 (%)", value=default_discount, step=0.1, 
+                                        help="反映投資風險的貼現率", min_value=1.0, max_value=20.0)
+        
+        # 顯示參數調整說明
+        if industry_info:
+            with st.expander("📊 行業特定參數說明"):
+                st.markdown(f"""
+                **{temp_stock_data.get('sector', '未知')}行業特性**:
+                - **建議成長率**: {industry_info['growth_rate']}%
+                - **建議永續成長率**: {industry_info['terminal_growth']}%  
+                - **建議折現率**: {industry_info['discount_rate']}%
+                - **風險等級**: {industry_info['volatility']}
+                
+                💡 **說明**: {industry_info['description']}
+                """)
+
     with col2:
-        st.subheader("計算結果")
-        if st.button("計算DCF價值"):
-            # 簡單的DCF計算
-            terminal_value = free_cash_flow * (1 + growth_rate) / (discount_rate - growth_rate)
-            st.metric("估計價值", f"{terminal_value:.2f} 億元")
-            st.success("計算完成！")
+        st.subheader("🎯 潛在報酬分析")
+        
+        if st.button("🚀 計算潛在報酬", type="primary", use_container_width=True):
+            if stock_code:
+                with st.spinner("📊 正在計算潛在報酬..."):
+                    # 獲取股票數據並計算DCF
+                    stock_data = get_stock_data(stock_code)
+                    result, error = calculate_dcf_with_potential_return(stock_data, growth_rate, terminal_growth, discount_rate)
+                    
+                    if error:
+                        st.error(f"❌ {error}")
+                    elif result:                        # 顯示公司基本資訊
+                        data_source_icon = "🔄" if stock_data.get('data_source') == 'auto_fetcher' else "🔧"
+                        data_source_text = "真實資料" if stock_data.get('data_source') == 'auto_fetcher' else "示範資料"
+                        st.success(f"✅ **{result['company_name']}** ({result['sector']}) {data_source_icon} {data_source_text}")
+                        
+                        # 資料來源詳細資訊
+                        if stock_data.get('data_source') == 'auto_fetcher':
+                            st.info("📡 **資料來源**: FinMind API 即時抓取")
+                            if 'net_income' in stock_data:
+                                st.caption(f"📊 基礎數據 - 淨利: {stock_data['net_income']:.1f}億 | 資本支出: {stock_data.get('capex', 0):.1f}億 | 折舊: {stock_data.get('depreciation', 0):.1f}億")
+                        else:
+                            st.warning("⚠️ **資料來源**: 示範用虛擬資料，實際投資請參考真實財報")
+                        
+                        # 🚀 潛在報酬率 - 核心指標
+                        potential_return = result['potential_return']
+                        
+                        if potential_return > 20:
+                            st.success(f"### 🚀 潛在報酬: **{potential_return:+.1f}%** (高潛力)")
+                        elif potential_return > 10:
+                            st.info(f"### 📈 潛在報酬: **{potential_return:+.1f}%** (中等潛力)")
+                        elif potential_return > 0:
+                            st.warning(f"### 📊 潛在報酬: **{potential_return:+.1f}%** (低潛力)")
+                        else:
+                            st.error(f"### 📉 潛在報酬: **{potential_return:+.1f}%** (可能高估)")
+                        
+                        # 關鍵數據
+                        col_key1, col_key2, col_key3 = st.columns(3)
+                        with col_key1:
+                            st.metric("當前股價", f"${result['current_price']:.0f}")
+                        with col_key2:
+                            st.metric("內在價值", f"${result['intrinsic_value_per_share']:.0f}")
+                        with col_key3:
+                            st.metric("安全邊際", f"{potential_return:+.1f}%")
+                        
+                        # 詳細資訊
+                        with st.expander("📊 詳細估值數據"):
+                            col_detail1, col_detail2 = st.columns(2)
+                            with col_detail1:
+                                st.write("**財務數據**")
+                                st.write(f"- 自由現金流: {result['current_fcf']:.1f} 億元")
+                                st.write(f"- 流通股數: {result['shares_outstanding']:.1f} 億股")
+                                st.write(f"- 當前市值: {result['current_market_value']:.1f} 億元")
+                            
+                            with col_detail2:
+                                st.write("**估值結果**")
+                                st.write(f"- 企業價值: {result['enterprise_value']:.1f} 億元")
+                                st.write(f"- 5年現金流現值: {result['total_pv']:.1f} 億元")
+                                st.write(f"- 終值現值: {result['terminal_pv']:.1f} 億元")
+                        
+                        # 現金流預測
+                        st.subheader("📅 現金流預測")
+                        df = pd.DataFrame(result['fcf_projections'])
+                        st.dataframe(df, use_container_width=True, hide_index=True)
+            else:
+                st.warning("⚠️ 請輸入股票代碼")
+
+with tab2:
+    st.markdown("### 🔍 用潛在報酬篩選優質標的")
+    st.info("💡 設定潛在報酬閾值，找出符合條件的投資標的")
     
-    st.info("💡 這是簡化版本，完整功能請聯繫技術支援。")
+    # 篩選參數
+    col_s1, col_s2 = st.columns(2)
+    
+    with col_s1:
+        st.subheader("🎯 篩選條件")
+        sector_filter = st.selectbox("選擇類股", [
+            "全部", "半導體", "金融", "電子", "電信", "塑膠", "鋼鐵", "汽車"
+        ])
+        
+        # 智能調整最低報酬率要求
+        base_min_return = st.number_input("基礎最低潛在報酬率 (%)", value=5.0, step=1.0,
+                                         help="系統會根據行業風險自動調整實際篩選標準")
+        
+        # 顯示行業調整後的實際篩選標準
+        if INDUSTRY_PARAMS_AVAILABLE and sector_filter != "全部":
+            adjusted_params = get_adjusted_screening_params(sector_filter, base_min_return)
+            actual_min_return = adjusted_params["min_potential_return"]
+            risk_level = adjusted_params["risk_level"]
+            
+            st.info(f"🎯 **{sector_filter}行業調整後實際篩選標準**: {actual_min_return:.1f}% (風險等級: {risk_level})")
+        else:
+            actual_min_return = base_min_return
+            st.info(f"🎯 **實際篩選標準**: {actual_min_return:.1f}%")
+        
+        min_market_cap = st.number_input("最小市值 (億元)", value=50, step=25, 
+                                       help="降低市值要求，避免過度篩選")
+        
+        # 新增：寬鬆篩選模式
+        relaxed_mode = st.checkbox("🔄 寬鬆篩選模式", value=True, 
+                                 help="啟用後會降低篩選條件，找出更多潛在標的")
+        
+    with col_s2:
+        st.subheader("📊 DCF參數")
+          # 根據選擇的行業自動調整預設參數
+        if INDUSTRY_PARAMS_AVAILABLE and sector_filter != "全部":
+            industry_params = get_industry_params(sector_filter)
+            default_growth = industry_params['growth_rate']
+            default_terminal = industry_params['terminal_growth'] 
+            default_discount = industry_params['discount_rate']
+            
+            st.success(f"✅ 已根據 **{sector_filter}** 行業特性自動調整參數")
+        else:
+            default_growth = 5.0
+            default_terminal = 2.0
+            default_discount = 8.0
+        
+        screen_growth = st.number_input("統一成長率 (%)", value=default_growth, step=0.1, key="screen_growth")
+        screen_terminal = st.number_input("統一永續成長率 (%)", value=default_terminal, step=0.1, key="screen_terminal")
+        screen_discount = st.number_input("統一折現率 (%)", value=default_discount, step=0.1, key="screen_discount")
+    
+    if st.button("🔍 開始篩選", type="primary", use_container_width=True):
+        with st.spinner("🔍 正在篩選優質標的..."):
+            # 獲取所有股票數據
+            all_stocks_data = get_all_stocks_for_screening()
+            screening_results = []
+            failed_count = 0
+            
+            # 寬鬆模式調整
+            if relaxed_mode:
+                adjusted_min_return = actual_min_return * 0.7  # 降低70%的要求
+                adjusted_min_cap = min_market_cap * 0.5      # 降低50%的市值要求
+                st.info(f"🔄 寬鬆模式: 潛在報酬 ≥ {adjusted_min_return:.1f}%, 市值 ≥ {adjusted_min_cap:.0f}億")
+            else:
+                adjusted_min_return = actual_min_return
+                adjusted_min_cap = min_market_cap
+            
+            for stock_data in all_stocks_data:
+                try:
+                    # 篩選類股
+                    if sector_filter != "全部" and stock_data["sector"] != sector_filter:
+                        continue
+                    
+                    # 計算DCF
+                    result, error = calculate_dcf_with_potential_return(stock_data, screen_growth, screen_terminal, screen_discount)
+                    
+                    if result and not error:
+                        # 篩選市值
+                        if result['current_market_value'] < adjusted_min_cap:
+                            continue
+                        
+                        # 篩選潛在報酬率
+                        if result['potential_return'] >= adjusted_min_return:
+                            data_source_icon = "🔄" if stock_data.get('data_source') == 'auto_fetcher' else "🔧"
+                            screening_results.append({
+                                '股票代碼': stock_data.get('stock_code', 'N/A'),
+                                '公司名稱': result['company_name'],
+                                '類股': result['sector'],
+                                '當前股價': f"${result['current_price']:.0f}",
+                                '內在價值': f"${result['intrinsic_value_per_share']:.0f}",
+                                '潛在報酬': f"{result['potential_return']:+.1f}%",
+                                '市值(億)': f"{result['current_market_value']:.0f}",
+                                '自由現金流(億)': f"{result['current_fcf']:.1f}",
+                                '資料': data_source_icon
+                            })
+                    else:
+                        failed_count += 1
+                except Exception as e:
+                    failed_count += 1
+                    continue
+              # 顯示結果
+            if screening_results:
+                # 按潛在報酬率排序
+                screening_results.sort(key=lambda x: float(x['潛在報酬'].replace('%', '').replace('+', '')), reverse=True)
+                
+                st.success(f"🎯 找到 **{len(screening_results)}** 檔符合條件的股票")
+                
+                # 資料來源統計
+                auto_count = sum(1 for r in screening_results if r['資料'] == '🔄')
+                fallback_count = len(screening_results) - auto_count
+                
+                if auto_count > 0:
+                    st.info(f"📡 真實資料: {auto_count} 檔 | 🔧 示範資料: {fallback_count} 檔")
+                else:
+                    st.warning("⚠️ 全部使用示範資料，建議檢查 AutoDataFetcher 模組狀態")
+                
+                df_results = pd.DataFrame(screening_results)
+                st.dataframe(df_results, use_container_width=True, hide_index=True)
+                
+                # 統計摘要
+                avg_return = sum([float(r['潛在報酬'].replace('%', '').replace('+', '')) for r in screening_results]) / len(screening_results)
+                st.info(f"📊 篩選結果統計: 平均潛在報酬率 **{avg_return:.1f}%**")
+                
+            else:
+                st.warning("😞 沒有找到符合條件的股票，請調整篩選條件")
+
+# 說明區域
+st.markdown("---")
+with st.expander("ℹ️ DCF估值方法說明"):
+    st.markdown("""
+    **統一的DCF估值算法**
+    
+    🎯 **核心指標 - 潛在報酬率**:
+    - 潛在報酬率 = (內在價值 - 當前股價) / 當前股價 × 100%
+    - 正值表示股票被低估，負值表示可能高估
+    
+    📊 **DCF計算步驟**:
+    1. **預測現金流**: 基於成長率預測未來5年現金流
+    2. **計算終值**: 使用永續成長模型計算第5年後的價值
+    3. **折現計算**: 用折現率將未來價值折現為現值
+    4. **每股價值**: 企業價值除以流通股數
+    
+    🎨 **使用建議**:
+    - **個股分析**: 深入了解單一股票的投資價值
+    - **類股篩選**: 批量比較，找出最具潛力的投資標的
+    - **參數調整**: 根據市場環境和個人判斷調整成長率和折現率
+    
+    ⚠️ **風險提醒**:
+    - DCF估值對參數敏感，建議進行敏感度分析
+    - 結合其他估值方法和基本面分析
+    - 考慮總體經濟和產業趨勢
+    """)
+
+# 快速導航
+st.markdown("---")
+st.subheader("🔗 相關功能")
+
+nav_col1, nav_col2, nav_col3 = st.columns(3)
+with nav_col1:
+    if st.button("📈 技術分析", use_container_width=True):
+        st.switch_page("pages/📈_技術分析.py")
+        
+with nav_col2:
+    if st.button("💼 投資組合", use_container_width=True):
+        st.switch_page("pages/💼_投資組合管理.py")
+        
+with nav_col3:
+    if st.button("🏠 返回主頁", use_container_width=True):
+        st.switch_page("🏠_儀表板.py")
