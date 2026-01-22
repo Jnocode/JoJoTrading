@@ -9,10 +9,17 @@ Write-Host ""
 
 # 檢查 Python 環境
 Write-Host "檢查 Python 環境..." -ForegroundColor Yellow
-try {
-    $pythonVersion = python --version 2>&1
-    Write-Host "✅ Python 環境就緒: $pythonVersion" -ForegroundColor Green
-} catch {
+$PYTHON_CMD = "python"
+if (Test-Path ".venv\Scripts\python.exe") {
+    $PYTHON_CMD = ".\.venv\Scripts\python.exe"
+    Write-Host "✅ 使用虛擬環境: $PYTHON_CMD" -ForegroundColor Green
+} elseif (Get-Command python -ErrorAction SilentlyContinue) {
+    $PYTHON_CMD = "python"
+    Write-Host "✅ 使用系統 Python" -ForegroundColor Green
+} elseif (Get-Command py -ErrorAction SilentlyContinue) {
+    $PYTHON_CMD = "py"
+    Write-Host "✅ 使用 Python Launcher (py)" -ForegroundColor Green
+} else {
     Write-Host "❌ Python 未安裝或不可用" -ForegroundColor Red
     exit 1
 }
@@ -51,16 +58,16 @@ do {
         "1" {
             Write-Host "🚀 啟動主應用..." -ForegroundColor Green
             Write-Host "這是 JoJo Trading 的主入口，包含完整功能導航" -ForegroundColor Yellow
-            python -m streamlit run streamlit_app.py
+            & $PYTHON_CMD -m streamlit run main_app.py
             Read-Host "按 Enter 鍵返回主選單..."
         }
         "2" {
             Write-Host "👤 啟動用戶中心..." -ForegroundColor Green
             Write-Host "用戶註冊、登入、訂閱管理" -ForegroundColor Yellow
             if (Test-Path "pages/enhanced/00_User_Center.py") {
-                python -m streamlit run pages/enhanced/00_User_Center.py
+                & $PYTHON_CMD -m streamlit run pages/enhanced/00_User_Center.py
             } else {
-                python -m streamlit run "pages/enhanced/00_👤_User_Center.py"
+                & $PYTHON_CMD -m streamlit run "pages/enhanced/00_👤_User_Center.py"
             }
             Read-Host "按 Enter 鍵返回主選單..."
         }
@@ -68,9 +75,9 @@ do {
             Write-Host "🎯 啟動主導航系統..." -ForegroundColor Green
             Write-Host "智能功能導航與快速入口" -ForegroundColor Yellow
             if (Test-Path "pages/enhanced/00_Navigation.py") {
-                python -m streamlit run pages/enhanced/00_Navigation.py
+                & $PYTHON_CMD -m streamlit run pages/enhanced/00_Navigation.py
             } else {
-                python -m streamlit run "pages/enhanced/00_🎯_Navigation.py"
+                & $PYTHON_CMD -m streamlit run "pages/enhanced/00_🎯_Navigation.py"
             }
             Read-Host "按 Enter 鍵返回主選單..."
         }
@@ -78,9 +85,9 @@ do {
             Write-Host "🤖 啟動 AI 股價預測..." -ForegroundColor Green
             Write-Host "LSTM 深度學習股價預測 (需專業版)" -ForegroundColor Yellow
             if (Test-Path "pages/enhanced/advanced/08_AI_Stock_Predictor.py") {
-                python -m streamlit run pages/enhanced/advanced/08_AI_Stock_Predictor.py
+                & $PYTHON_CMD -m streamlit run pages/enhanced/advanced/08_AI_Stock_Predictor.py
             } else {
-                python -m streamlit run "pages/enhanced/advanced/08_🤖_AI_Stock_Predictor.py"
+                & $PYTHON_CMD -m streamlit run "pages/enhanced/advanced/08_🤖_AI_Stock_Predictor.py"
             }
             Read-Host "按 Enter 鍵返回主選單..."
         }
@@ -88,9 +95,9 @@ do {
             Write-Host "📊 啟動 DCF 估值計算器..." -ForegroundColor Green
             Write-Host "現金流折現估值分析" -ForegroundColor Yellow
             if (Test-Path "pages/enhanced/02_DCF_Calculator.py") {
-                python -m streamlit run pages/enhanced/02_DCF_Calculator.py
+                & $PYTHON_CMD -m streamlit run pages/enhanced/02_DCF_Calculator.py
             } else {
-                python -m streamlit run "pages/enhanced/02_📊_DCF_Calculator.py"
+                & $PYTHON_CMD -m streamlit run "pages/enhanced/02_📊_DCF_Calculator.py"
             }
             Read-Host "按 Enter 鍵返回主選單..."
         }
@@ -109,7 +116,7 @@ do {
         }
         "7" {
             Write-Host "🔧 Phase 5 管理系統..." -ForegroundColor Green
-            python scripts/phase5_launch.py --stage=all
+            & $PYTHON_CMD scripts/phase5_launch.py --stage=all
             Read-Host "按 Enter 鍵返回主選單..."
         }
         "8" {
@@ -127,7 +134,7 @@ do {
             Write-Host "🎯 下週重點: AI 智能化升級與技術深化" -ForegroundColor Yellow
             Write-Host ""
             Write-Host "Python 版本:" -ForegroundColor White
-            python --version
+            & $PYTHON_CMD --version
             Write-Host ""
             Write-Host "📊 檔案結構檢查:" -ForegroundColor White
             if (Test-Path "pages/enhanced/00_👤_User_Center.py") { Write-Host "  ✅ 用戶中心" -ForegroundColor Green } else { Write-Host "  ❌ 用戶中心" -ForegroundColor Red }

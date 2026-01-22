@@ -9,6 +9,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
+import time
 from datetime import datetime, timedelta
 import sys
 from pathlib import Path
@@ -20,13 +21,8 @@ src_path = project_root / "src"
 if src_path.exists():
     sys.path.insert(0, str(src_path))
 
-# 設置頁面配置
-st.set_page_config(
-    page_title="投資組合管理 - JoJo Trading",
-    page_icon="💼",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# ⚠️ 注意：在多頁面應用中，頁面檔案不應該調用 st.set_page_config()
+# 頁面配置應該在主應用檔案（main_app.py）中設定
 
 # 載入自定義CSS
 def load_portfolio_css():
@@ -166,7 +162,11 @@ def render_portfolio_overview(holdings):
     total_market_value = sum(h['market_value'] for h in holdings.values())
     total_cost_value = sum(h['cost_value'] for h in holdings.values())
     total_unrealized_pnl = total_market_value - total_cost_value
-    total_unrealized_pnl_pct = (total_unrealized_pnl / total_cost_value) * 100
+    
+    if total_cost_value != 0:
+        total_unrealized_pnl_pct = (total_unrealized_pnl / total_cost_value) * 100
+    else:
+        total_unrealized_pnl_pct = 0.0
     
     # 績效指標卡片
     col1, col2, col3, col4 = st.columns(4)
@@ -531,6 +531,52 @@ def render_rebalancing_suggestions(holdings, total_market_value):
     else:
         st.success("✅ 投資組合配置良好，暫時不需要再平衡")
 
+# ... existing code ...
+
+# 添加 WatchlistManager 和 ShioajiConnector 導入
+try:
+    from jojo_trading.core.watchlist_manager import WatchlistManager
+    from jojo_trading.core.shioaji_connector import ShioajiConnector
+    WATCHLIST_AVAILABLE = True
+except ImportError:
+    WATCHLIST_AVAILABLE = False
+    
+try:
+    from jojo_trading.core.network_manager import NetworkManager
+    NETWORK_MGR_AVAILABLE = True
+except ImportError:
+    NETWORK_MGR_AVAILABLE = False
+
+
+def transform_watchlist_to_holdings(df):
+    """將 WatchlistManager 的 DataFrame 轉換為此頁面所需的格式"""
+    holdings = {}
+    if df.empty:
+        return holdings
+        
+    for _, row in df.iterrows():
+        # 只處理有持股的
+        shares = row.get('shares_held', 0)
+        if shares > 0:
+            code = row['stock_code']
+            holdings[code] = {
+                'name': row['stock_name'] or code,
+                'shares': shares,
+                'avg_cost': row.get('average_cost', 0),
+                'current_price': row.get('current_price', 0), # 需要確保有即時價格
+                'sector': row.get('note', '未分類'), # 暫時用 note 或其他欄位
+                'market_value': shares * row.get('current_price', 0),
+                'cost_value': shares * row.get('average_cost', 0),
+            }
+            # 補算損益
+            holdings[code]['unrealized_pnl'] = holdings[code]['market_value'] - holdings[code]['cost_value']
+            if holdings[code]['cost_value'] > 0:
+                holdings[code]['unrealized_pnl_pct'] = (holdings[code]['unrealized_pnl'] / holdings[code]['cost_value']) * 100
+            else:
+                holdings[code]['unrealized_pnl_pct'] = 0
+                
+    return holdings
+
 def main():
     """主函數"""
     # 載入CSS樣式
@@ -538,30 +584,79 @@ def main():
     
     # 渲染頁面標題
     render_portfolio_header()
+
+    # 初始化 WatchlistManager
+    wm = None
+    if WATCHLIST_AVAILABLE:
+        wm = WatchlistManager()
+
+    # 資料來源選擇
+    use_real_data = st.sidebar.checkbox("使用真實庫存資料 (Shioaji)", value=False, disabled=not WATCHLIST_AVAILABLE)
     
-    # 生成示範數據
-    holdings = generate_portfolio_data()
+    if use_real_data and wm:
+        # 從 DB 讀取
+        df = wm.get_all_entries()
+        holdings = transform_watchlist_to_holdings(df)
+        if not holdings:
+            st.info("尚無真實持股資料，請使用側邊欄「同步庫存」功能。")
+    else:
+        # 生成示範數據
+        holdings = generate_portfolio_data()
     
     # 主要內容區域
     tab1, tab2, tab3, tab4 = st.tabs(["📊 總覽", "📋 持股明細", "📈 績效分析", "⚖️ 再平衡"])
     
     with tab1:
         total_market_value, total_cost_value = render_portfolio_overview(holdings)
-        render_allocation_analysis(holdings, total_market_value)
-        render_risk_analysis(holdings)
+        if total_market_value > 0:
+            render_allocation_analysis(holdings, total_market_value)
+            render_risk_analysis(holdings)
     
     with tab2:
-        render_holdings_table(holdings, total_market_value)
+        if total_market_value > 0:
+            render_holdings_table(holdings, total_market_value)
     
     with tab3:
         render_performance_chart()
     
     with tab4:
-        render_rebalancing_suggestions(holdings, total_market_value)
+        if total_market_value > 0:
+            render_rebalancing_suggestions(holdings, total_market_value)
     
     # 側邊欄工具
     with st.sidebar:
+        # [NEW] Network Security (Standardized)
+        if NETWORK_MGR_AVAILABLE:
+            try:
+                nm = NetworkManager()
+                nm.render_sidebar(st)
+                st.divider()
+            except Exception as e:
+                print(f"Network Sidebar Error: {e}")
+
         st.markdown("### 🛠️ 投資組合工具")
+
+        # [NEW] 同步庫存功能
+        if WATCHLIST_AVAILABLE:
+            with st.expander("📥 同步帳戶庫存", expanded=True):
+                st.caption("從 Shioaji API 同步最新庫存")
+                if st.button("立即同步", key="sync_btn_portfolio", type="primary"):
+                    try:
+                        connector = ShioajiConnector()
+                        st.toast("正在連線 Shioaji API...", icon="🔄")
+                        positions = connector.get_positions()
+                        
+                        if positions:
+                            stats = wm.sync_portfolio(positions)
+                            st.toast(f"同步完成！更新: {stats['updated']}, 失敗: {stats['failed']}", icon="✅")
+                            st.success(f"已更新 {stats['updated']} 檔持股資訊")
+                            if use_real_data:
+                                time.sleep(1)
+                                st.rerun()
+                        else:
+                            st.warning("未取得庫存資料 (可能是空倉或連線失敗)")
+                    except Exception as e:
+                        st.error(f"同步失敗: {e}")
         
         # 新增持股
         with st.expander("➕ 新增持股"):
@@ -574,11 +669,14 @@ def main():
         
         # 賣出持股
         with st.expander("➖ 賣出持股"):
-            sell_stock = st.selectbox("選擇股票", list(holdings.keys()))
-            sell_shares = st.number_input("賣出股數", min_value=1)
-            
-            if st.button("賣出"):
-                st.success("賣出功能開發中...")
+            if holdings:
+                sell_stock = st.selectbox("選擇股票", list(holdings.keys()))
+                sell_shares = st.number_input("賣出股數", min_value=1)
+                
+                if st.button("賣出"):
+                    st.success("賣出功能開發中...")
+            else:
+                 st.info("無持股可賣出")
         
         st.markdown("---")
         
@@ -586,16 +684,16 @@ def main():
         st.markdown("### 📊 快速統計")
         
         total_value = sum(h['market_value'] for h in holdings.values())
-        total_pnl = sum(h['unrealized_pnl'] for h in holdings.values())
+        total_pnl = sum(h.get('unrealized_pnl', 0) for h in holdings.values())
         
         st.metric("總市值", f"NT$ {total_value:,.0f}")
         st.metric("總損益", f"NT$ {total_pnl:+,.0f}")
         st.metric("持股數", f"{len(holdings)} 檔")
         
-        # 風險指標
-        st.markdown("### ⚠️ 風險提醒")
-        st.warning("💡 半導體類股權重偏高，建議分散投資")
-        st.info("📈 建議定期檢視投資組合配置")
+        # 風險指標 (僅在有數據時顯示)
+        if total_value > 0:
+            st.markdown("### ⚠️ 風險提醒")
+            st.warning("💡 請定期檢視風險")
 
 if __name__ == "__main__":
     main()

@@ -27,49 +27,52 @@ try:
     except ImportError:
         create_auto_trading_engine = None
     
+    # 嘗試導入自動數據抓取器
+    try:
+        from ..core.auto_data_fetcher import AutoDataFetcher
+    except ImportError:
+        AutoDataFetcher = None
+
     # 使用導入的枚舉
     TradeType = TradeTypeEnum
     TradeStatus = TradeStatusEnum
     SignalType = SignalTypeEnum
     
 except ImportError:
-    # 簡化的枚舉類別定義（向後兼容）
-    class TradeType:
-        BUY = "買入"
-        SELL = "賣出"
-
-    class TradeStatus:
-        OPEN = "開倉"
-        CLOSED = "平倉"
-        PARTIAL = "部分平倉"
-
-    class SignalType:
-        DCF_BUY = "DCF買入"
-        DCF_SELL = "DCF賣出"
-        TECHNICAL_BUY = "技術買入"
-        TECHNICAL_SELL = "技術賣出"
-        MANUAL = "手動"
-    
-    # 設置為None以便後續檢查
+    # 如果找不到模組，不提供 Mock 定義，直接報錯或設為 None
     TradeRecorder = None
     TradeEntry = None
     create_ai_advisor = None
     create_signal_generator = None
     create_auto_trading_engine = None
 
+try:
+    from jojo_trading.core.shioaji_connector import ShioajiConnector
+except ImportError:
+    ShioajiConnector = None
+
+try:
+    from jojo_trading.core.enhanced_dcf import IntegratedDCFHandler
+except ImportError:
+    IntegratedDCFHandler = None
+
+try:
+    from jojo_trading.core.yfinance_fetcher import YFinanceFetcher
+except ImportError:
+    YFinanceFetcher = None
+
+
 class TradingSystemUI:
     """交易系統UI管理器 - 修復版本"""
     
-    def __init__(self, data_gateway=None, trade_recorder=None):
+    def __init__(self, trade_recorder=None):
         """
         初始化交易系統UI - 支援多種初始化方式
         
         Args:
-            data_gateway: 數據閘道器實例 (可選，向後兼容)
             trade_recorder: 交易記錄器實例 (可選，向後兼容)
         """
         # 向後兼容的參數處理
-        self.data_gateway = data_gateway
         self.trade_recorder_param = trade_recorder
         
         # 初始化交易系統組件（使用session_state確保狀態持久化）
@@ -124,15 +127,84 @@ class TradingSystemUI:
         self.signal_generator = st.session_state.signal_generator
         self.auto_trading_engine = st.session_state.auto_trading_engine
         
-        # 向後兼容的簡單實現
-        if 'trades' not in st.session_state:
-            st.session_state.trades = []
-        if 'ai_suggestions' not in st.session_state:
-            st.session_state.ai_suggestions = []
+        # 初始化自動數據抓取器
+        if 'auto_fetcher' not in st.session_state:
+            try:
+                if AutoDataFetcher:
+                    st.session_state.auto_fetcher = AutoDataFetcher()
+                else:
+                    st.session_state.auto_fetcher = None
+            except:
+                st.session_state.auto_fetcher = None
+        self.auto_fetcher = st.session_state.auto_fetcher
+
+        # Initialize Shioaji for Live Data
+        if 'sj_connector' not in st.session_state:
+            st.session_state.sj_connector = ShioajiConnector() if ShioajiConnector else None
+        self.sj_connector = st.session_state.sj_connector
+
+    @st.fragment(run_every=3)
+    def render_live_ticker(self, symbol: str, label: str = None):
+        """
+        即時跳動報價組件 (每 3 秒刷新)
+        支援股票 (e.g. "2330") 與 期貨 (e.g. "TXF", "MXF")
+        """
+        price, change_pct = self._fetch_price_universal(symbol)
         
-        self.trades = st.session_state.trades
-        self.ai_suggestions = st.session_state.ai_suggestions
-    
+        display_label = label if label else symbol
+        
+        if price > 0:
+            color = "normal"
+            if change_pct > 0:
+                color = "normal" # Streamlit metric handles color by delta
+            
+            st.metric(
+                label=display_label,
+                value=f"{price:,.2f}",
+                delta=f"{change_pct:.2f}%" if change_pct is not None else None
+            )
+        else:
+            st.metric(label=display_label, value="---", delta=None)
+
+    def _fetch_price_universal(self, symbol: str):
+        """
+        通用價格獲取 (股票 + 期貨)
+        優先使用 Shioaji 即時源
+        """
+        price = 0.0
+        change_pct = 0.0
+        
+        # 1. Try Shioaji (Real-Time)
+        if self.sj_connector and self.sj_connector.is_connected:
+            # Check if likely Future (Non-digit start or known codes)
+            is_future = not symbol.isdigit() or symbol.startswith(('TX', 'MX', 'ZE'))
+            
+            if is_future:
+                # Futures Snapshot
+                snap = self.sj_connector.get_futures_snapshot(code=symbol[:3], specific_code=symbol if len(symbol)>3 else None)
+                if snap:
+                    price = snap.get('price', 0)
+                    change_pct = snap.get('pct_change', 0)
+                    return price, change_pct
+            else:
+                # Stock Snapshot
+                p = self.sj_connector.get_latest_price(symbol)
+                if p:
+                    price = p
+                    # Calculate change if open/ref available (Simplified here, just return price)
+                    # Ideally get full snapshot for change
+                    return price, 0.0 
+
+        # 2. Fallback to AutoFetcher (Stocks only, cached/API)
+        if self.auto_fetcher and symbol.isdigit():
+             data = self.auto_fetcher.auto_fetch_stock_data(symbol)
+             if data.get('success'):
+                 price = data['data'].get('current_market_price', 0)
+                 # derived change not always available in basic fetch
+                 return price, 0.0
+                 
+        return price, change_pct
+
     def render(self):
         """渲染主要UI - 向後兼容方法"""
         self.render_trading_dashboard()
@@ -166,43 +238,24 @@ class TradingSystemUI:
 
     def _display_system_status(self):
         """顯示系統狀態"""
-        # 只在有問題時顯示警告
+        # 檢查關鍵組件
         missing_components = []
         if not self.trade_recorder:
             missing_components.append("交易記錄器")
-        if not self.ai_advisor:
-            missing_components.append("AI建議")
-        if not self.signal_generator:
-            missing_components.append("信號生成器")
-        if not self.auto_trading_engine:
-            missing_components.append("自動交易")
             
         if missing_components:
-            with st.expander("⚠️ 系統狀態提醒", expanded=False):
-                st.warning(f"以下功能模組未完全載入: {', '.join(missing_components)}")
-                st.info("系統將以簡化模式運行，部分功能可能受限")
-
+            st.error(f"⚠️ 關鍵功能未初始化: {', '.join(missing_components)}")
+            st.warning("請先連接券商或檢查系統設定。在此狀態下目前僅提供有限的檢視功能，無法進行實際交易。")
+            
     def _render_overview_tab(self):
         """渲染總覽頁面"""
         st.header("📊 投資組合總覽")
         
         # 檢查是否有交易記錄器
         if not self.trade_recorder:
-            st.warning("⚠️ 交易記錄系統未初始化")
-            st.info("正在使用簡化模式...")
-            
-            # 簡化模式的績效指標
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("總交易數", len(self.trades))
-            with col2:
-                total_pnl = sum(t.get('realized_pnl', 0) for t in self.trades)
-                st.metric("總損益", f"${total_pnl:.2f}")
-            with col3:
-                st.metric("勝率", "計算中...")
-            with col4:
-                st.metric("平均回報", "計算中...")
+            st.info("ℹ️ 請連接券商以查看投資組合。如需模擬交易，請前往「🎮 模擬專區」。")
             return
+
         
         # 完整模式的績效指標
         try:
@@ -235,14 +288,14 @@ class TradingSystemUI:
             if open_trades:
                 # 更新未實現損益
                 for trade in open_trades:
-                    current_price = self._get_mock_current_price(trade.stock_code)
+                    current_price = self._get_current_price(trade.stock_code)
                     if hasattr(self.trade_recorder, 'update_unrealized_pnl'):
                         self.trade_recorder.update_unrealized_pnl(trade.stock_code, current_price)
                 
                 # 顯示持倉表格
                 holdings_data = []
                 for trade in open_trades:
-                    current_price = self._get_mock_current_price(trade.stock_code)
+                    current_price = self._get_current_price(trade.stock_code)
                     holdings_data.append({
                         '股票代碼': trade.stock_code,
                         '交易類型': trade.trade_type.value if hasattr(trade.trade_type, 'value') else str(trade.trade_type),
@@ -262,6 +315,16 @@ class TradingSystemUI:
             else:
                 st.info("🔍 目前沒有開倉位置")
             
+
+            
+            # 即時報價監視 (Watchlist Ticker)
+            st.subheader("⚡ 即時報價 (Live Ticker)")
+            cols = st.columns(4)
+            watchlist = ["2330", "TXF", "2317", "MXF"] # Example mixed list
+            for i, sym in enumerate(watchlist):
+                with cols[i % 4]:
+                    self.render_live_ticker(sym)
+
             # 最新市場洞察
             if self.ai_advisor:
                 st.subheader("🎯 市場洞察")
@@ -285,17 +348,15 @@ class TradingSystemUI:
                             
         except Exception as e:
             st.error(f"載入投資組合數據時發生錯誤: {str(e)}")
-            st.info("正在使用簡化模式...")
 
     def _render_trade_records_tab(self):
         """渲染交易記錄頁面"""
         st.header("📝 交易記錄管理")
         
         if not self.trade_recorder:
-            st.warning("⚠️ 交易記錄系統未初始化")
-            st.info("正在使用簡化模式...")
-            self._render_simple_trade_records()
+            st.info("ℹ️ 請連接券商以管理真實交易記錄。如需模擬交易，請前往「🎮 模擬專區」。")
             return
+
         
         # 手動新增交易記錄
         with st.expander("➕ 新增交易記錄"):
@@ -342,65 +403,13 @@ class TradingSystemUI:
         except Exception as e:
             st.error(f"載入交易記錄時發生錯誤: {str(e)}")
 
-    def _render_simple_trade_records(self):
-        """渲染簡化的交易記錄"""
-        st.subheader("📋 交易記錄 (簡化模式)")
-        
-        # 簡單的新增交易記錄表單
-        with st.expander("➕ 新增交易記錄"):
-            with st.form("simple_add_trade_form"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    stock_code = st.text_input("股票代碼*", placeholder="例如: 2330")
-                    trade_type = st.selectbox("交易類型*", options=["買入", "賣出"])
-                    entry_price = st.number_input("進入價格*", min_value=0.01, step=0.01)
-                    quantity = st.number_input("數量*", min_value=1, step=1)
-                
-                with col2:
-                    signal_type = st.selectbox("信號類型", options=["DCF買入", "DCF賣出", "技術買入", "技術賣出", "手動"])
-                    notes = st.text_area("備註", height=100)
-                
-                submitted = st.form_submit_button("➕ 新增交易記錄")
-                
-                if submitted:
-                    if stock_code and entry_price > 0 and quantity > 0:
-                        trade = {
-                            'trade_id': str(uuid.uuid4()),
-                            'stock_code': stock_code,
-                            'stock_name': f"{stock_code}公司",
-                            'trade_type': trade_type,
-                            'entry_price': entry_price,
-                            'quantity': quantity,
-                            'signal_type': signal_type,
-                            'notes': notes,
-                            'entry_time': datetime.now().strftime('%Y-%m-%d %H:%M'),
-                            'status': '開倉',
-                            'realized_pnl': 0
-                        }
-                        
-                        self.trades.append(trade)
-                        st.session_state.trades = self.trades
-                        st.success(f"✅ 交易記錄已新增 (ID: {trade['trade_id'][:8]})")
-                        st.rerun()
-                    else:
-                        st.error("❌ 請填寫所有必填欄位")
-        
-        # 顯示交易記錄
-        if self.trades:
-            df_trades = pd.DataFrame(self.trades)
-            st.dataframe(df_trades, use_container_width=True)
-        else:
-            st.info("📝 暫無交易記錄")
 
     def _render_ai_recommendations_tab(self):
         """渲染AI建議頁面"""
         st.header("🤖 AI投資建議")
         
         if not self.ai_advisor:
-            st.warning("⚠️ AI建議系統未初始化")
-            st.info("系統將提供簡化的建議功能")
-            self._render_simple_ai_recommendations()
+            st.info("ℹ️ AI 建議系統未連接。請確保已設定並連接券商系統。")
             return
         
         # 股票分析輸入
@@ -423,32 +432,8 @@ class TradingSystemUI:
         st.subheader("📋 投資組合建議")
         self._generate_portfolio_recommendations()
 
-    def _render_simple_ai_recommendations(self):
-        """渲染簡化的AI建議"""
-        st.subheader("📊 市場分析 (簡化模式)")
-        
-        # 股票分析輸入
-        stock_code = st.text_input("輸入股票代碼進行分析", placeholder="例如: 2330")
-        
-        if st.button("🔍 開始分析", type="primary") and stock_code:
-            # 簡化的分析結果
-            current_price = self._get_mock_current_price(stock_code)
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.subheader(f"📊 {stock_code} 基本資訊")
-                st.write(f"**當前價格:** ${current_price:.2f}")
-                st.write(f"**本益比:** {15 + (hash(stock_code) % 20):.1f}")
-                st.write(f"**淨值比:** {1.2 + (hash(stock_code) % 30) / 10:.2f}")
-            
-            with col2:
-                st.subheader("💡 簡化建議")
-                random.seed(hash(stock_code))
-                if random.random() > 0.5:
-                    st.success("建議: 可考慮買入")
-                else:
-                    st.info("建議: 持續觀察")
+
+
 
     def _render_signal_scanning_tab(self):
         """渲染信號掃描頁面"""
@@ -608,7 +593,7 @@ class TradingSystemUI:
                         self.trade_recorder.load_trades()
                         st.success("✅ 交易記錄已重新載入")
                     else:
-                        st.info("簡化模式下無需重新載入")
+                         st.warning("交易記錄器未連接")
                 except Exception as e:
                     st.error(f"重新載入失敗: {str(e)}")
         
@@ -676,26 +661,10 @@ class TradingSystemUI:
                             trade_id = self.trade_recorder.add_trade(trade)
                             st.success(f"✅ 交易記錄已新增 (ID: {trade_id[:8]})")
                         else:
-                            # 簡化模式下使用字典
-                            trade = {
-                                'trade_id': str(uuid.uuid4()),
-                                'stock_code': stock_code,
-                                'stock_name': f"{stock_code}公司",
-                                'trade_type': trade_type,
-                                'entry_price': entry_price,
-                                'quantity': quantity,
-                                'signal_type': signal_type,
-                                'dcf_intrinsic_value': dcf_value if dcf_value > 0 else None,
-                                'notes': notes,
-                                'entry_time': datetime.now().strftime('%Y-%m-%d %H:%M'),
-                                'status': '開倉'
-                            }
-                            
-                            self.trades.append(trade)
-                            st.session_state.trades = self.trades
-                            st.success(f"✅ 交易記錄已新增 (ID: {trade['trade_id'][:8]})")
+                             st.error("內部錯誤：交易類型或信號類型未定義")
                         
                         st.rerun()
+
                     except Exception as e:
                         st.error(f"新增失敗: {str(e)}")
                 else:
@@ -720,7 +689,7 @@ class TradingSystemUI:
     def _filter_trades(self, status_filter: str, signal_filter: str, date_range):
         """篩選交易記錄"""
         if not self.trade_recorder:
-            return self._filter_simple_trades(status_filter, signal_filter, date_range)
+            return []
             
         try:
             trades = self.trade_recorder.trades.copy()
@@ -806,11 +775,25 @@ class TradingSystemUI:
         df_trades = pd.DataFrame(trades_data)
         st.dataframe(df_trades, use_container_width=True)
 
-    def _get_mock_current_price(self, stock_code: str) -> float:
-        """獲取模擬當前價格"""
-        random.seed(hash(stock_code) % 1000)
-        base_price = 100 + (hash(stock_code) % 500)
-        return base_price * (0.95 + random.random() * 0.1)
+    def _get_current_price(self, stock_code: str) -> float:
+        """獲取當前價格 (優先使用真實數據)"""
+        # 嘗試使用 AutoDataFetcher 獲取真實價格
+        if self.auto_fetcher:
+            try:
+                # 使用 auto_fetch_stock_data 獲取數據
+                result = self.auto_fetcher.auto_fetch_stock_data(stock_code)
+                if result['success'] and 'current_market_price' in result['data']:
+                    price = result['data']['current_market_price']
+                    if price and price > 0:
+                        return float(price)
+            except Exception as e:
+                print(f"獲取真實價格失敗 {stock_code}: {e}")
+        
+        # 如果無法獲取真實數據，顯示警告並返回 0 (避免誤導)
+        # 或者為了演示目的，如果真的獲取不到，可以保留一個標記
+        return 0.0
+
+
 
     def _render_holdings_chart(self, open_trades):
         """渲染持倉分析圖表"""
@@ -823,7 +806,7 @@ class TradingSystemUI:
             labels = []
             
             for trade in open_trades:
-                current_price = self._get_mock_current_price(trade.stock_code)
+                current_price = self._get_current_price(trade.stock_code)
                 value = current_price * trade.quantity
                 holdings_value.append(value)
                 labels.append(f"{trade.stock_code}")
@@ -900,42 +883,137 @@ class TradingSystemUI:
 
     def _analyze_stock_with_ai(self, stock_code: str):
         """使用AI分析股票"""
+        # 獲取真實數據
+        real_data = {}
+        current_price = 0.0
+        
+        if self.auto_fetcher:
+            with st.spinner(f"正在抓取 {stock_code} 的真實數據..."):
+                try:
+                    fetch_result = self.auto_fetcher.get_dcf_ready_data(stock_code)
+                    if fetch_result.get('success'):
+                        real_data = fetch_result
+                        current_price = real_data.get('current_market_price', 0.0)
+                except Exception as e:
+                    st.error(f"數據抓取失敗: {e}")
+
         if not self.ai_advisor:
-            # 簡化的分析
-            current_price = self._get_mock_current_price(stock_code)
+            # 簡化的分析 (使用真實數據)
+            if current_price == 0:
+                current_price = self._get_current_price(stock_code)
             
             col1, col2 = st.columns(2)
             
             with col1:
                 st.subheader(f"📊 {stock_code} 基本面分析")
-                st.write(f"**當前價格:** ${current_price:.2f}")
-                st.write(f"**本益比:** {15 + (hash(stock_code) % 20):.1f}")
-                st.write(f"**淨值比:** {1.2 + (hash(stock_code) % 30) / 10:.2f}")
+                if current_price > 0:
+                    st.write(f"**當前價格:** ${current_price:.2f}")
+                    
+                    # 計算簡單指標
+                    eps = real_data.get('net_income_parent', 0) / real_data.get('shares_outstanding', 1) if real_data else 0
+                    pe = current_price / eps if eps > 0 else 0
+                    
+                    if pe > 0:
+                        st.write(f"**本益比 (Est):** {pe:.1f}")
+                    
+                    if real_data:
+                        st.write(f"**年度淨利:** {real_data.get('net_income_parent', 0)/1e8:.1f}億")
+                        st.write(f"**資料來源:** {real_data.get('data_sources', {}).get('current_market_price', '未知')}")
+                else:
+                    st.warning("無法獲取即時股價")
             
             with col2:
                 st.subheader("💡 分析建議")
-                random.seed(hash(stock_code))
-                if random.random() > 0.5:
-                    st.success("建議: 可考慮買入")
+                if real_data:
+                    quality_score = real_data.get('data_quality_score', 0)
+                    st.write(f"**數據品質:** {quality_score:.0f}%")
+                    
+                    if quality_score > 60:
+                        st.success("數據完整，可進行深入分析")
+                    else:
+                        st.warning("數據不足，建議謹慎參考")
                 else:
-                    st.info("建議: 持續觀察")
+                    st.info("請檢查網絡連接或數據源")
             return
             
         try:
             # 完整AI分析
-            current_price = self._get_mock_current_price(stock_code)
-            mock_data = {
+            if current_price == 0:
+                current_price = self._get_current_price(stock_code)
+            
+            # 構建分析數據 (優先使用真實數據)
+            analysis_data = {
                 'current_price': current_price,
-                'pe_ratio': 15 + (hash(stock_code) % 20),
-                'pb_ratio': 1.2 + (hash(stock_code) % 30) / 10,
-                'roe': 8 + (hash(stock_code) % 15),
-                'debt_ratio': 0.3 + (hash(stock_code) % 40) / 100,
-                'revenue_growth': -10 + (hash(stock_code) % 30),
-                'validation_score': 40 + (hash(stock_code) % 50)
+                'pe_ratio': 0, # 需計算
+                'pb_ratio': 0, # 需計算
+                'roe': 0,      # 需計算
+                'debt_ratio': 0,
+                'revenue_growth': 0,
+                'validation_score': real_data.get('data_quality_score', 50) if real_data else 50
             }
             
-            # AI分析
-            analysis = self.ai_advisor.analyze_stock(stock_code, mock_data, current_price)
+            # 如果有真實數據，補充指標
+            if real_data:
+                net_income = real_data.get('net_income_parent', 0)
+                shares = real_data.get('shares_outstanding', 1)
+                eps = net_income / shares if shares > 0 else 0
+                if eps > 0 and current_price > 0:
+                    analysis_data['pe_ratio'] = current_price / eps
+                
+                # 這裡可以加入更多真實指標計算...
+                
+                # 3. [NEW] 計算 DCF 內在價值
+                try:
+                    dcf_handler = IntegratedDCFHandler()
+                    
+                    # 準備 DCF 輸入數據 (優先使用 FCF，若無則嘗試用淨利近似)
+                    dcf_input = []
+                    if real_data.get('fcf'):
+                        # 假設 FCF 為此單一年度值，簡單預測未來 5 年 (固定成長)
+                        base_fcf = real_data['fcf']
+                        dcf_input = [base_fcf * (1.05 ** i) for i in range(5)]
+                    elif real_data.get('net_income_parent'):
+                        # 簡易代理: Net Income + Dep - Capex (若無 Capex 則設為 0)
+                        ni = real_data.get('net_income_parent')
+                        dep = real_data.get('depreciation', 0) or 0
+                        capex = real_data.get('capex', 0) or 0 # 注意: Capex 通常為負值? 需確認 DataAdapter
+                        # DataAdapter 中 standardized["capex"] = yf_data.get("capex") -> Yahoo Capex 是負數
+                        # 所以 FCF = NI + Dep + Capex (加上負數)
+                        # 但為保安全，我們檢查 Capex 符號
+                        if capex > 0: capex = -capex # 強制轉負
+                        
+                        fcf_proxy = ni + dep + capex
+                        dcf_input = [fcf_proxy * (1.05 ** i) for i in range(5)]
+                    
+                    if dcf_input:
+                        total_enterprise_value = dcf_handler.calculate_dcf_value(dcf_input)
+                        
+                        # 加上現金，減去債務 => 股權價值
+                        cash = real_data.get('cash', 0) or 0
+                        debt = real_data.get('total_debt', 0) or 0
+                        equity_value = total_enterprise_value + cash - debt
+                        
+                        shares = real_data.get('shares_outstanding', 1) or 1
+                        intrinsic_value_per_share = equity_value / shares
+                        
+                        # 更新到分析數據 (關鍵修正: AIAdvisor 讀取的是 intrinsic_value_per_share)
+                        if intrinsic_value_per_share > 0:
+                            analysis_data['intrinsic_value_per_share'] = intrinsic_value_per_share
+                            # 向下兼容
+                            analysis_data['dcf_intrinsic_value'] = intrinsic_value_per_share
+                
+                except Exception as e:
+                    st.error(f"DCF 計算錯誤: {str(e)}")
+                    # 顯示調試信息
+                    # st.write(f"Debug Info: NI={real_data.get('net_income_parent')}, Dep={real_data.get('depreciation')}")
+
+            # [Phase 4] 獲取歷史價格數據
+            price_history = None
+            if YFinanceFetcher:
+                price_history = YFinanceFetcher.get_price_history(stock_code)
+
+            # AI分析 (傳入價格歷史)
+            analysis = self.ai_advisor.analyze_stock(stock_code, analysis_data, current_price, price_history)
             signal = self.ai_advisor.generate_trading_signal(analysis)
             
             # 顯示分析結果
@@ -944,25 +1022,83 @@ class TradingSystemUI:
             with col1:
                 st.subheader(f"📊 {stock_code} 基本面分析")
                 st.write(f"**當前價格:** ${current_price:.2f}")
-                st.write(f"**DCF內在價值:** ${getattr(analysis, 'dcf_intrinsic_value', current_price):.2f}")
-                st.write(f"**本益比:** {mock_data['pe_ratio']:.1f}")
-                st.write(f"**淨值比:** {mock_data['pb_ratio']:.2f}")
-                st.write(f"**ROE:** {mock_data['roe']:.1f}%")
+                
+                # F-Score Display
+                f_score = getattr(analysis, 'piotroski_f_score', 0)
+                f_color = "green" if f_score >= 7 else "orange" if f_score >= 4 else "red"
+                st.markdown(f"**F-Score:** :{f_color}[{f_score}/9] (財務體質)")
+                
+                dcf_val = getattr(analysis, 'dcf_intrinsic_value', None)
+                st.write(f"**DCF內在價值:** ${dcf_val if dcf_val is not None else 0:.2f}")
+                
+                if analysis_data['pe_ratio'] > 0:
+                    st.write(f"**本益比:** {analysis_data['pe_ratio']:.1f}")
+                
+                if real_data:
+                     st.caption(f"數據來源: {real_data.get('data_sources', 'AutoFetcher')}")
             
             with col2:
                 st.subheader("🎯 AI評分")
-                score = getattr(analysis, 'overall_score', 70)
+                score = getattr(analysis, 'overall_score', 0)
                 st.progress(score / 100, text=f"綜合評分: {score:.0f}/100")
+                
+                # Technical Display
+                if analysis.rsi is not None:
+                    st.write(f"**RSI:** {analysis.rsi:.1f}")
+                
+                if analysis.ma_trend:
+                    trend_icon = "📈" if analysis.ma_trend == "Bullish" else "📉" if analysis.ma_trend == "Bearish" else "➡️"
+                    st.write(f"**趨勢:** {trend_icon} {analysis.ma_trend}")
             
             # 顯示交易信號
             if signal:
                 action = getattr(signal, 'action', 'HOLD')
                 if hasattr(action, 'value'):
                     action = action.value
-                st.success(f"🎯 **AI建議:** {action}")
-                st.write(f"**信心度:** {getattr(signal, 'confidence', 70):.0f}%")
-                st.write(f"**目標價格:** ${getattr(signal, 'target_price', current_price):.2f}")
+                
+                if action == 'BUY':
+                    st.success(f"🎯 **AI建議:** {action}")
+                elif action == 'SELL':
+                    st.error(f"🎯 **AI建議:** {action}")
+                else:
+                    st.info(f"🎯 **AI建議:** {action}")
+                    
+                st.write(f"**信心度:** {getattr(signal, 'confidence', 0):.0f}%")
+                tgt_price = getattr(signal, 'target_price', None)
+                st.write(f"**目標價格:** ${tgt_price if tgt_price is not None else 0:.2f}")
                 st.write(f"**建議理由:** {getattr(signal, 'reasoning', '基於基本面分析')}")
+                
+                # [Phase 5] Auto Trader Integration
+                if action in ['BUY', 'SELL'] and self.broker_connected:
+                    st.markdown("---")
+                    if st.button(f"⚡ 立即執行 ({action})", key=f"quick_exec_{stock_code}", type="primary"):
+                        st.session_state[f"show_order_{stock_code}"] = True
+                    
+                    if st.session_state.get(f"show_order_{stock_code}", False):
+                        with st.container(border=True):
+                            st.markdown(f"**確認下單: {stock_code}**")
+                            q_price = st.number_input("價格", value=current_price, key=f"q_p_{stock_code}")
+                            q_qty = st.number_input("數量 (張)", value=1, min_value=1, key=f"q_q_{stock_code}")
+                            
+                            if st.button("🚀 確認送出", key=f"q_sub_{stock_code}", type="primary"):
+                                # 呼叫下單邏輯 (需確保 ShioajiConnector 可用)
+                                try:
+                                    if self.sj_connector:
+                                        # 使用市價或限價
+                                        order_res = self.sj_connector.place_order(
+                                            stock_code=stock_code,
+                                            action=action, # Buy/Sell
+                                            price=q_price,
+                                            quantity=q_qty,
+                                            price_type="LMT", # 限價
+                                            order_type="ROD"  # 當日有效
+                                        )
+                                        st.success(f"下單成功! 單號: {order_res.get('order_id', 'Unknown')}")
+                                        st.session_state[f"show_order_{stock_code}"] = False # 關閉面板
+                                    else:
+                                        st.error("券商未連線")
+                                except Exception as e_ord:
+                                    st.error(f"下單失敗: {e_ord}")
                 
         except Exception as e:
             st.error(f"AI分析時發生錯誤: {str(e)}")
@@ -984,47 +1120,179 @@ class TradingSystemUI:
             st.error(f"生成建議時發生錯誤: {str(e)}")
 
     def _scan_entry_signals(self, watchlist: List[str]):
-        """掃描進場信號"""
+        """掃描進場信號 (使用真實數據)"""
         try:
             if not watchlist:
                 st.warning("請先設定監視列表")
                 return
             
-            # 簡化的信號掃描
             results = []
-            for stock in watchlist[:3]:  # 限制前3個
-                random.seed(hash(stock))
-                if random.random() > 0.7:  # 30% 機率有信號
+            progress_bar = st.progress(0)
+            
+            for i, stock in enumerate(watchlist):
+                progress_bar.progress((i + 1) / len(watchlist))
+                
+                # 獲取真實數據
+                real_data = None
+                current_price = 0
+                intrinsic_value = 0
+                
+                if self.auto_fetcher:
+                    try:
+                        fetch_result = self.auto_fetcher.get_dcf_ready_data(stock)
+                        if fetch_result.get('success'):
+                            real_data = fetch_result
+                            current_price = real_data.get('current_market_price', 0)
+                            
+                            # 簡單估值邏輯 (如果沒有 AI Advisor)
+                            # 這裡可以調用 IntegratedDCFHandler 如果有的話，但為了簡單起見，我們先用簡單邏輯
+                            # 或者如果 fetch_result 裡已經有 intrinsic_value (目前沒有，需要計算)
+                            
+                            # 嘗試計算內在價值 (使用簡單 DCF)
+                            net_income = real_data.get('net_income_parent', 0)
+                            shares = real_data.get('shares_outstanding', 1)
+                            eps = net_income / shares if shares > 0 else 0
+                            if eps > 0:
+                                # 假設 8% 成長, 10% 折現, 5年
+                                intrinsic_value = eps * 15 # 簡單 PE 估值作為替代
+                            
+                    except Exception:
+                        pass
+                
+                if current_price == 0:
+                    current_price = self._get_current_price(stock)
+
+                # 生成信號
+                signal = 'HOLD'
+                confidence = 50
+                reason = '數據不足'
+                
+                if current_price > 0 and intrinsic_value > 0:
+                    upside = (intrinsic_value / current_price) - 1
+                    if upside > 0.2:
+                        signal = 'BUY'
+                        confidence = min(60 + int(upside * 100), 90)
+                        reason = f'估值低估 {upside:.1%}'
+                    elif upside < -0.2:
+                        signal = 'SELL'
+                        confidence = min(60 + int(abs(upside) * 100), 90)
+                        reason = f'估值高估 {abs(upside):.1%}'
+                    else:
+                        reason = '估值合理'
+                
+                if signal != 'HOLD':
                     results.append({
                         'stock_code': stock,
-                        'signal': 'BUY',
-                        'confidence': random.randint(60, 90),
-                        'reason': 'DCF估值低估'
+                        'signal': signal,
+                        'confidence': confidence,
+                        'reason': reason,
+                        'price': current_price,
+                        'value': intrinsic_value
                     })
             
+            progress_bar.empty()
+            
             if results:
-                st.success(f"🎯 發現 {len(results)} 個進場信號")
+                st.success(f"🎯 發現 {len(results)} 個交易信號")
                 for result in results:
-                    st.write(f"• {result['stock_code']}: {result['signal']} (信心度: {result['confidence']}%)")
+                    color = "🟢" if result['signal'] == 'BUY' else "🔴"
+                    with st.expander(f"{color} {result['stock_code']} - {result['signal']} (信心度: {result['confidence']}%)"):
+                        st.write(f"**當前價格:** ${result['price']:.2f}")
+                        st.write(f"**估算價值:** ${result['value']:.2f}")
+                        st.write(f"**理由:** {result['reason']}")
             else:
-                st.info("🔍 目前沒有發現進場信號")
+                st.info("🔍 目前沒有發現明顯的交易信號")
                 
         except Exception as e:
             st.error(f"掃描信號時發生錯誤: {str(e)}")
 
     def _scan_exit_signals(self):
-        """掃描出場信號"""
+        """掃描出場信號 (使用真實數據)"""
         try:
             if self.trade_recorder and hasattr(self.trade_recorder, 'get_open_trades'):
                 open_trades = self.trade_recorder.get_open_trades()
             else:
-                open_trades = [t for t in self.trades if t.get('status') == '開倉']
+                # 簡化模式下的持倉
+                open_trades = [t for t in self.trades if isinstance(t, dict) and t.get('status') == '開倉']
             
-            if open_trades:
-                st.info(f"分析了 {len(open_trades)} 個持倉")
-                st.write("目前建議持有，未發現明顯的出場信號")
-            else:
+            if not open_trades:
                 st.info("目前沒有持倉需要分析")
+                return
+
+            results = []
+            progress_bar = st.progress(0)
+            
+            for i, trade in enumerate(open_trades):
+                progress_bar.progress((i + 1) / len(open_trades))
+                
+                stock_code = trade.stock_code if hasattr(trade, 'stock_code') else trade.get('stock_code')
+                entry_price = trade.entry_price if hasattr(trade, 'entry_price') else trade.get('entry_price', 0)
+                
+                # 獲取真實數據
+                current_price = 0
+                intrinsic_value = 0
+                
+                if self.auto_fetcher:
+                    try:
+                        fetch_result = self.auto_fetcher.get_dcf_ready_data(stock_code)
+                        if fetch_result.get('success'):
+                            real_data = fetch_result
+                            current_price = real_data.get('current_market_price', 0)
+                            
+                            # 簡單估值邏輯
+                            net_income = real_data.get('net_income_parent', 0)
+                            shares = real_data.get('shares_outstanding', 1)
+                            eps = net_income / shares if shares > 0 else 0
+                            if eps > 0:
+                                intrinsic_value = eps * 15 
+                    except Exception:
+                        pass
+                
+                if current_price == 0:
+                    current_price = self._get_current_price(stock_code)
+                
+                # 生成出場信號
+                signal = 'HOLD'
+                reason = '持有中'
+                
+                if current_price > 0:
+                    # 獲利出場條件
+                    if entry_price > 0:
+                        pnl_pct = (current_price - entry_price) / entry_price
+                        if pnl_pct > 0.2: # 獲利 20%
+                            signal = 'SELL'
+                            reason = f'獲利達標 ({pnl_pct:.1%})'
+                        elif pnl_pct < -0.15: # 停損 15%
+                            signal = 'SELL'
+                            reason = f'觸發停損 ({pnl_pct:.1%})'
+                    
+                    # 估值出場條件
+                    if intrinsic_value > 0:
+                        upside = (intrinsic_value / current_price) - 1
+                        if upside < -0.1: # 價格高於價值 10%
+                            signal = 'SELL'
+                            reason = f'估值過高 (溢價 {abs(upside):.1%})'
+                
+                if signal == 'SELL':
+                    results.append({
+                        'stock_code': stock_code,
+                        'signal': signal,
+                        'reason': reason,
+                        'price': current_price,
+                        'entry': entry_price
+                    })
+
+            progress_bar.empty()
+            
+            if results:
+                st.warning(f"⚠️ 發現 {len(results)} 個出場信號")
+                for result in results:
+                    with st.expander(f"🔴 {result['stock_code']} - 建議賣出"):
+                        st.write(f"**當前價格:** ${result['price']:.2f}")
+                        st.write(f"**買入價格:** ${result['entry']:.2f}")
+                        st.write(f"**理由:** {result['reason']}")
+            else:
+                st.success("✅ 目前持倉穩健，未發現明顯出場信號")
                 
         except Exception as e:
             st.error(f"掃描出場信號時發生錯誤: {str(e)}")
@@ -1033,36 +1301,19 @@ class TradingSystemUI:
         """顯示現有信號"""
         st.subheader("📡 最新交易信號")
         
-        # 模擬信號數據
-        recent_signals = [
-            {
-                'stock_code': '2330',
-                'signal': 'BUY',
-                'confidence': 85,
-                'target_price': 550.0,
-                'reasoning': '基於DCF估值分析，目前股價低估約15%',
-                'timestamp': datetime.now() - timedelta(hours=2)
-            },
-            {
-                'stock_code': '2317',
-                'signal': 'HOLD',
-                'confidence': 65,
-                'target_price': 125.0,
-                'reasoning': '技術面中性，建議持續觀察',
-                'timestamp': datetime.now() - timedelta(hours=4)
-            }
-        ]
+        # 這裡可以連接到 SignalGenerator 獲取歷史信號
+        # 目前僅顯示提示
+        st.info("請點擊上方按鈕進行信號掃描")
         
-        for signal in recent_signals:
-            with st.expander(f"📈 {signal['stock_code']} - {signal['signal']} (信心度: {signal['confidence']}%)"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.write(f"**目標價格:** ${signal['target_price']:.2f}")
-                    st.write(f"**時間:** {signal['timestamp'].strftime('%Y-%m-%d %H:%M')}")
-                
-                with col2:
-                    st.write(f"**理由:** {signal['reasoning']}")
+        # 如果有自動交易引擎，可以顯示其日誌中的信號
+        if self.auto_trading_engine and hasattr(self.auto_trading_engine, 'get_recent_signals'):
+            try:
+                signals = self.auto_trading_engine.get_recent_signals()
+                if signals:
+                    for signal in signals:
+                        st.write(signal)
+            except:
+                pass
 
     def _export_trade_records(self):
         """匯出交易記錄"""

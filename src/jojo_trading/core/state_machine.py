@@ -29,16 +29,20 @@ import pandas as pd
 from enum import Enum, auto
 import json # For loading industries.json
 import requests # Added to resolve NameError
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from ..utils.helpers import api_request_with_retry
 import sys
 from pathlib import Path
+import concurrent.futures
 
-# 添加專案根目錄到 Python 路徑
+# 添加專案根目錄到 Python 跊
 project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.jojo_trading.core import data_handler
 from src.jojo_trading.analysis.growth_analyzer import evaluate_growth_potential, GrowthCriterion
+from src.jojo_trading.core.auto_data_fetcher import AutoDataFetcher
 
 class JoJoState(Enum):
     CONFIG_LOAD = auto()
@@ -93,7 +97,7 @@ class JoJoStateMachine:
     def transition_to(self, next_state):
         print(f"Transitioning from {self.current_state.name} to {next_state.name}")
         self.current_state = next_state
-        self.execute_state()
+        # self.execute_state() # Removed to allow Streamlit UI loop to handle state transitions
 
     def execute_state(self):
         print(f"Entering state: {self.current_state.name}")
@@ -271,182 +275,78 @@ class DataFetchState(State):
             print(f"    {stock_detail}")
 
         all_financial_data_for_stock = {}
-        start_date_finmind = "2022-01-01" # For FinMind, fetch a longer history
-
-        # 移除暫時的筆數限制，完整處理所有成分股
+        
+        # 使用 AutoDataFetcher 進行自動化資料抓取
+        fetcher = AutoDataFetcher()
         processed_count = 0
+        
+        # 獲取最大處理數量限制
+        max_stocks = self.context.get('max_stocks', 0)
+        if max_stocks > 0:
+            target_stocks = self.context['industry_stocks_details'][:max_stocks]
+        else:
+            target_stocks = self.context['industry_stocks_details']
+            
+        total_stocks = len(target_stocks)
+        
+        print(f"  (DataFetchState) 預計處理 {total_stocks} 支股票 (上限: {'無限制' if max_stocks == 0 else max_stocks})...")
+        progress_callback = self.context.get('progress_callback')
 
-        for stock_detail in self.context['industry_stocks_details']: # Iterate over the original full list
+        # 定義單一股票抓取函數
+        def fetch_single_stock(stock_detail):
             stock_code = stock_detail['code']
-            print(f"  準備為 {stock_code} ({stock_detail['name']}) 從 FinMind 提取財報數據... (Processing {processed_count + 1}/{len(self.context['industry_stocks_details'])})")
+            stock_name = stock_detail['name']
+            # 使用 AutoDataFetcher 獲取 DCF 就緒數據
+            dcf_data = fetcher.get_dcf_ready_data(stock_code)
+            return stock_code, stock_name, dcf_data, stock_detail
+
+        # 使用 ThreadPoolExecutor 進行並行處理
+        # 限制最大線程數為 20 或 股票總數，避免過多請求
+        max_workers = min(20, total_stocks) if total_stocks > 0 else 1
+        print(f"  (DataFetchState) 啟動並行處理 (Threads: {max_workers})...")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有任務
+            future_to_stock = {executor.submit(fetch_single_stock, stock): stock for stock in target_stocks}
             
-            financial_data_for_stock = stock_detail.copy() # Start with basic info
-            financial_data_for_stock['error'] = [] # Initialize error list
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_stock)):
+                try:
+                    stock_code, stock_name, dcf_data, original_detail = future.result()
+                    
+                    # 更新進度
+                    if progress_callback:
+                        progress_callback(i + 1, total_stocks, stock_code, stock_name)
+                    
+                    if dcf_data['success']:
+                        financial_data_for_stock = dcf_data.copy()
+                        # 確保名稱被保留
+                        financial_data_for_stock['name'] = stock_name
+                        
+                        # 補充一些 ValuationState 可能需要的額外欄位
+                        if 'eps_finmind' not in financial_data_for_stock:
+                             try:
+                                 ni = financial_data_for_stock.get('net_income_parent', 0)
+                                 shares = financial_data_for_stock.get('shares_outstanding', 1)
+                                 if shares > 0:
+                                     financial_data_for_stock['eps_finmind'] = ni / shares
+                             except:
+                                 pass
+                        
+                        all_financial_data_for_stock[stock_code] = financial_data_for_stock
+                        print(f"    (DataFetchState) 成功獲取 {stock_code} 數據")
+                    else:
+                        # 處理錯誤情況
+                        error_msg = dcf_data.get('error', '未知錯誤')
+                        print(f"    (DataFetchState) 獲取 {stock_code} 數據失敗: {error_msg}")
+                        
+                        financial_data_for_stock = original_detail.copy()
+                        financial_data_for_stock['error'] = error_msg
+                        all_financial_data_for_stock[stock_code] = financial_data_for_stock
 
-            # Fetch Balance Sheet (BS)
-            df_bs = data_handler.fetch_finmind_financial_statement_data(stock_code, start_date_finmind, 'BalanceSheet')
-            freq = self.context.get('financial_data_freq', '季度')
-            # --- 新增：自動回退機制 ---
-            bs_items_map = {
-                'ar_t0': 'AccountsReceivableNet', 
-                'inv_t0': 'Inventories', 
-                'ap_t0': 'AccountsPayable',
-                'ar_t1': 'AccountsReceivableNet', # Will be handled by lookback
-                'inv_t1': 'Inventories',          # Will be handled by lookback
-                'ap_t1': 'AccountsPayable'        # Will be handled by lookback
-            }
-            available_dates_in_bs = sorted(pd.to_datetime(df_bs['date'].unique()), reverse=True) if not df_bs.empty else []
-            report_date_t0 = None
-            report_date_t1 = None
-            extracted_bs_items_t0 = {}
-            extracted_bs_items_t1_temp = None
-            if available_dates_in_bs:
-                # 先嘗試最新一期
-                report_date_t0 = available_dates_in_bs[0].strftime('%Y-%m-%d')
-                extracted_bs_items_t0 = data_handler.extract_finmind_items(df_bs, bs_items_map, report_date_str=report_date_t0, max_lookback_periods=2)
-                # 若主欄位皆為 None，則自動回退一期
-                if all(extracted_bs_items_t0.get(k) is None for k in ['ar_t0', 'inv_t0', 'ap_t0']):
-                    if len(available_dates_in_bs) > 1:
-                        report_date_t0 = available_dates_in_bs[1].strftime('%Y-%m-%d')
-                        extracted_bs_items_t0 = data_handler.extract_finmind_items(df_bs, bs_items_map, report_date_str=report_date_t0, max_lookback_periods=2)
-                # T-1
-                if len(available_dates_in_bs) > 1:
-                    report_date_t1 = available_dates_in_bs[1].strftime('%Y-%m-%d')
-                    extracted_bs_items_t1_temp = data_handler.extract_finmind_items(df_bs, bs_items_map, report_date_str=report_date_t1, max_lookback_periods=2)
-                    # 若主欄位皆為 None，則再回退一期
-                    if all(extracted_bs_items_t1_temp.get(k) is None for k in ['ar_t0', 'inv_t0', 'ap_t0']) and len(available_dates_in_bs) > 2:
-                        report_date_t1 = available_dates_in_bs[2].strftime('%Y-%m-%d')
-                        extracted_bs_items_t1_temp = data_handler.extract_finmind_items(df_bs, bs_items_map, report_date_str=report_date_t1, max_lookback_periods=2)
-            else:
-                extracted_bs_items_t0 = {}
-            if extracted_bs_items_t0:
-                financial_data_for_stock.update(extracted_bs_items_t0)
-                financial_data_for_stock['bs_report_date_t0'] = extracted_bs_items_t0.get('report_date')
-            if extracted_bs_items_t1_temp:
-                for item_key in ['ar_t0', 'inv_t0', 'ap_t0']:
-                    t1_key = item_key.replace('_t0', '_t1')
-                    financial_data_for_stock[t1_key] = extracted_bs_items_t1_temp.get(item_key)
-                financial_data_for_stock['bs_report_date_t1'] = extracted_bs_items_t1_temp.get('report_date')
-            if extracted_bs_items_t0:
-                print(f"    (DataFetchState) 股票 {stock_code} 資產負債表 T0: {financial_data_for_stock.get('bs_report_date_t0')}, T-1: {financial_data_for_stock.get('bs_report_date_t1')}")
-            else:
-                financial_data_for_stock['error'].append("無法獲取資產負債表")
-
-
-            # Fetch Cash Flow Statement (CF)
-            df_cf = data_handler.fetch_finmind_financial_statement_data(stock_code, start_date_finmind, 'CashFlowsStatement')
-            cf_items_map = {
-                'capex': [
-                    'PropertyAndPlantAndEquipment',                 # Found in test_finmind_api.py output
-                    'AcquisitionOfPropertyPlantAndEquipment',       # Primary
-                    'FixedAssetsPurchases',                         # Common alternative
-                    'PurchaseOfPropertyPlantAndEquipment',          # Another alternative
-                    'CashOutflowForAcquisitionOfPropertyPlantAndEquipment', # More descriptive
-                    'IncreaseInPropertyPlantAndEquipment',          # Change in PPE
-                    'AcquisitionOfIntangibleAssetsOtherThanGoodwill', # Intangible assets
-                    'CashOutflowForAcquisitionOfIntangibleAssets'   # Cash outflow for intangibles
-                ],
-                'depreciation': [ # This will cover both depreciation and amortization
-                    'DepreciationExpense',                          # Primary for IS, but sometimes in CF
-                    'DepreciationAndAmortizationExpense',           # Common in CF (covers both)
-                    'DepreciationAmortization',                     # Short form (covers both)
-                    'DepreciationAndAmortization',                  # Another common form (covers both)
-                    'Depreciation',                                 # Depreciation only
-                    'Amortization',                                 # Amortization only (if separate)
-                    'PropertyPlantAndEquipmentDepreciation'         # Specific depreciation
-                ],
-                'amortization': [ # Keep separate if needed, but usually covered by 'depreciation' list
-                    'AmortizationExpense',
-                    'Amortization'
-                ]
-            }
-            available_dates_in_cf = sorted(pd.to_datetime(df_cf['date'].unique()), reverse=True) if not df_cf.empty else []
-            cf_report_date = financial_data_for_stock.get('bs_report_date_t0')
-            extracted_cf_items = {}
-            if available_dates_in_cf:
-                # 先嘗試與資產負債表同日期
-                if cf_report_date and pd.to_datetime(cf_report_date) in available_dates_in_cf:
-                    extracted_cf_items = data_handler.extract_finmind_items(df_cf, cf_items_map, report_date_str=cf_report_date, max_lookback_periods=2)
-                else:
-                    # 若沒有，則用最新一期
-                    cf_report_date = available_dates_in_cf[0].strftime('%Y-%m-%d')
-                    extracted_cf_items = data_handler.extract_finmind_items(df_cf, cf_items_map, report_date_str=cf_report_date, max_lookback_periods=2)
-                    # 若主欄位皆為 None，則自動回退一期
-                    if all(extracted_cf_items.get(k) is None for k in ['capex', 'depreciation', 'amortization']) and len(available_dates_in_cf) > 1:
-                        cf_report_date = available_dates_in_cf[1].strftime('%Y-%m-%d')
-                        extracted_cf_items = data_handler.extract_finmind_items(df_cf, cf_items_map, report_date_str=cf_report_date, max_lookback_periods=2)
-            if extracted_cf_items:
-                financial_data_for_stock.update(extracted_cf_items)
-                financial_data_for_stock['cf_report_date'] = extracted_cf_items.get('report_date')
-            else:
-                financial_data_for_stock['error'].append("無法獲取現金流量表")
-
-            # Fetch Income Statement (IS) - FinancialStatements in FinMind
-            df_is = data_handler.fetch_finmind_financial_statement_data(stock_code, start_date_finmind, 'FinancialStatements')
-            is_items_map = {'net_income_parent': 'EquityAttributableToOwnersOfParent', 'eps_finmind': 'EPS'}
-            available_dates_in_is = sorted(pd.to_datetime(df_is['date'].unique()), reverse=True) if not df_is.empty else []
-            is_report_date = financial_data_for_stock.get('bs_report_date_t0')
-            extracted_is_items = {}
-            if available_dates_in_is:
-                # 先嘗試與資產負債表同日期
-                if is_report_date and pd.to_datetime(is_report_date) in available_dates_in_is:
-                    extracted_is_items = data_handler.extract_finmind_items(df_is, is_items_map, report_date_str=is_report_date, max_lookback_periods=2)
-                else:
-                    # 若沒有，則用最新一期
-                    is_report_date = available_dates_in_is[0].strftime('%Y-%m-%d')
-                    extracted_is_items = data_handler.extract_finmind_items(df_is, is_items_map, report_date_str=is_report_date, max_lookback_periods=2)
-                    # 若主欄位皆為 None，則自動回退一期
-                    if all(extracted_is_items.get(k) is None for k in ['net_income_parent', 'eps_finmind']) and len(available_dates_in_is) > 1:
-                        is_report_date = available_dates_in_is[1].strftime('%Y-%m-%d')
-                        extracted_is_items = data_handler.extract_finmind_items(df_is, is_items_map, report_date_str=is_report_date, max_lookback_periods=2)
-            if extracted_is_items:
-                financial_data_for_stock.update(extracted_is_items)
-                financial_data_for_stock['is_report_date'] = extracted_is_items.get('report_date')
-            else:
-                financial_data_for_stock['error'].append("無法獲取損益表")            # Get current market price using the new FinMind price fetching function
-            # Use the latest available financial report date as the target date for the price,
-            # or None to get the absolute latest price if no report dates are available.
-            price_target_date = financial_data_for_stock.get('is_report_date') or \
-                                financial_data_for_stock.get('cf_report_date') or \
-                                financial_data_for_stock.get('bs_report_date_t0')
-            current_price = data_handler.fetch_finmind_stock_price(stock_code, target_date_str=price_target_date)
-            financial_data_for_stock['current_market_price'] = current_price
-            if current_price is None:
-                financial_data_for_stock['error'].append(f"無法從FinMind獲取股票 {stock_code} 的目前股價 (目標日期: {price_target_date})")
-            
-            # --- shares_outstanding 自動補全 ---
-            if not financial_data_for_stock.get("shares_outstanding"):
-                # 1. 先從 stock_detail 補
-                so = stock_detail.get("shares_outstanding")
-                if so:
-                    financial_data_for_stock["shares_outstanding"] = so
-                else:
-                    # 2. 嘗試從 all_companies_openapi_data 補 (移除了 data_fetching 依賴)
-                    try:
-                        # 直接從 all_companies_openapi_data 補
-                        all_companies = self.context.get("all_companies_openapi_data", [])
-                        so_found = None
-                        for comp in all_companies:
-                            if str(comp.get("公司代號")) == str(stock_code):
-                                so_str = comp.get("已發行普通股數或TDR原股發行股數")
-                                try:
-                                    so_found = float(str(so_str).replace(",", ""))
-                                except Exception:
-                                    so_found = None
-                                break
-                        if so_found:
-                            financial_data_for_stock["shares_outstanding"] = so_found
-                    except Exception as e:
-                        print(f"[jojo_state_machine] shares_outstanding 多來源補全失敗: {e}")
-
-            # Consolidate errors
-            if financial_data_for_stock['error']:
-                financial_data_for_stock['error'] = "; ".join(financial_data_for_stock['error'])
-            else:
-                del financial_data_for_stock['error'] # Remove if no errors
-
-            all_financial_data_for_stock[stock_code] = financial_data_for_stock
-            processed_count += 1
+                    processed_count += 1
+                    
+                except Exception as e:
+                    print(f"    (DataFetchState) 處理線程發生異常: {e}")
 
         self.context['processed_data'] = all_financial_data_for_stock
         print(f"  已嘗試為 {processed_count} 支成分股提取財務數據和股價。")
@@ -497,11 +397,31 @@ class FilteringState(State):
             print("  (FilteringState) 成長股篩選已啟用")
 
         filtered_results = []
+        excluded_results = [] # 儲存被排除的股票詳細資訊
         growth_filtered_count = 0
+        
+        # 初始化排除原因統計
+        exclusion_summary = {
+            'valuation_error': 0,
+            'missing_data': 0,
+            'intrinsic_value_zero_or_negative': 0,
+            'eps_negative_or_low': 0,
+            'growth_filter_failed': 0,
+            'potential_return_low': 0,
+            'total_excluded': 0
+        }
         
         for res in results:
             if res.get("error"):
                 print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 存在估值錯誤，已跳過: {res['error']}")
+                exclusion_summary['valuation_error'] += 1
+                exclusion_summary['total_excluded'] += 1
+                excluded_results.append({
+                    'stock_code': res.get('stock_code'),
+                    'name': res.get('name', ''),
+                    'reason': f"估值錯誤: {res.get('error')}",
+                    'category': 'valuation_error'
+                })
                 continue
 
             intrinsic_value = res.get("intrinsic_value_per_share")
@@ -511,36 +431,96 @@ class FilteringState(State):
 
             if intrinsic_value is None or current_price is None or potential_return is None:
                 print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 缺少估值或市價數據，已跳過。")
+                exclusion_summary['missing_data'] += 1
+                exclusion_summary['total_excluded'] += 1
+                excluded_results.append({
+                    'stock_code': res.get('stock_code'),
+                    'name': res.get('name', ''),
+                    'reason': "數據缺失 (無法計算內在價值)",
+                    'category': 'missing_data'
+                })
                 continue
-            if intrinsic_value <= 0:
-                print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 因 內在價值 ({intrinsic_value:.2f}) <= 0 不符條件而未被選入。")
-                continue
-            
             # 主要篩選條件：潛在回報和內在價值
-            if potential_return >= threshold:
-                # 直接排除EPS為負或過低的股票
-                if source_eps is None or source_eps < min_eps:
-                    print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 近期會計EPS ({source_eps}) 為負或過低，已排除。")
-                    continue
+            # 根據模式決定是否篩選
+            is_ranking_mode = self.context.get('screening_mode') == 'ranking'
 
-                # 成長股篩選檢查
-                if enable_growth_filter:
-                    growth_result = self._evaluate_growth_stock(res)
-                    if not growth_result['is_growth_stock']:
-                        print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 未通過成長股條件，已篩除。")
-                        growth_filtered_count += 1
-                        continue
-                    else:
-                        print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 通過成長股條件檢查。")
-                        # 將成長股分析結果添加到結果中
-                        res['growth_analysis'] = growth_result
-                
+            if intrinsic_value <= 0:
+                if not is_ranking_mode:
+                    print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 因 內在價值 ({intrinsic_value:.2f}) <= 0 不符條件而未被選入。")
+                    exclusion_summary['intrinsic_value_zero_or_negative'] += 1
+                    exclusion_summary['total_excluded'] += 1
+                    excluded_results.append({
+                        'stock_code': res.get('stock_code'),
+                        'name': res.get('name', ''),
+                        'reason': f"內在價值異常 ({intrinsic_value:.2f} <= 0)",
+                        'category': 'intrinsic_value_zero_or_negative'
+                    })
+                    continue
+                else:
+                    print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 內在價值 ({intrinsic_value:.2f}) <= 0，但在排行模式下保留。")
+            
+            
+            # 檢查 EPS (無論模式如何，通常都應該過濾掉虧損股，除非用戶特別想要看)
+            # 這裡假設排行模式下，我們還是希望看到有基本獲利的股票，或者我們可以放寬
+            # 為了符合"排行"的直覺，我們只在篩選模式下嚴格過濾 EPS，或者在排行模式下標記
+            # 但原邏輯是直接 continue，我們保持原邏輯但記錄原因
+            if source_eps is None or source_eps < min_eps:
+                if not is_ranking_mode:
+                    print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 近期會計EPS ({source_eps}) 為負或過低，已排除。")
+                    exclusion_summary['eps_negative_or_low'] += 1
+                    exclusion_summary['total_excluded'] += 1
+                    excluded_results.append({
+                        'stock_code': res.get('stock_code'),
+                        'name': res.get('name', ''),
+                        'reason': f"EPS 過低或虧損 ({source_eps})",
+                        'category': 'eps_negative_or_low'
+                    })
+                    continue
+                else:
+                    print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 近期會計EPS ({source_eps}) 為負或過低，但在排行模式下保留。")
+
+            # 成長股篩選檢查
+            if enable_growth_filter:
+                growth_result = self._evaluate_growth_stock(res)
+                if not growth_result['is_growth_stock']:
+                    print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 未通過成長股條件，已篩除。")
+                    growth_filtered_count += 1
+                    exclusion_summary['growth_filter_failed'] += 1
+                    exclusion_summary['total_excluded'] += 1
+                    excluded_results.append({
+                        'stock_code': res.get('stock_code'),
+                        'name': res.get('name', ''),
+                        'reason': "未通過成長股條件",
+                        'category': 'growth_filter_failed'
+                    })
+                    continue
+                else:
+                    print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 通過成長股條件檢查。")
+                    # 將成長股分析結果添加到結果中
+                    res['growth_analysis'] = growth_result
+            
+            if potential_return >= threshold or is_ranking_mode:
                 filtered_results.append(res)
             else:
                 # 即使EPS為正，如果潛在回報不足，也不選入
                 print(f"  (FilteringState) 股票 {res.get('stock_code')} ({res.get('name', '')}) 因潛在報酬 ({potential_return:.1%}) 未達標 (> {threshold*100:.1f}%) 而未被選入 (內在價值: {intrinsic_value:.2f}, 會計EPS: {source_eps}).")
+                exclusion_summary['potential_return_low'] += 1
+                exclusion_summary['total_excluded'] += 1
+                excluded_results.append({
+                    'stock_code': res.get('stock_code'),
+                    'name': res.get('name', ''),
+                    'reason': f"潛在報酬不足 ({potential_return:.1%} < {threshold:.1%})",
+                    'category': 'potential_return_low'
+                })
+
+        # 如果是排行模式，按潛在回報排序
+        if self.context.get('screening_mode') == 'ranking':
+            filtered_results.sort(key=lambda x: x.get('potential_return', -999), reverse=True)
 
         self.context['filtered_results'] = filtered_results
+        self.context['excluded_results'] = excluded_results
+        self.context['exclusion_summary'] = exclusion_summary
+        
         if enable_growth_filter:
             print(f"FilteringState 完成，成長股篩選排除了 {growth_filtered_count} 筆股票，最終篩選出 {len(filtered_results)} 筆符合條件的股票。")
         else:

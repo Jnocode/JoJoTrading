@@ -606,6 +606,18 @@ class EnhancedIndividualDCFComponent:
         # 投資建議
         self._display_investment_advice(intrinsic_value, current_price)
         
+        # 顯示估值基礎與品質註記
+        if 'valuation_basis' in result:
+            note_type = "success" if result['valuation_basis'] == 'FCF' else "warning"
+            if note_type == "success":
+                st.success(f"ℹ️ **估值基礎**: {result['valuation_basis']} - {result.get('quality_note', '')}")
+            else:
+                st.warning(f"ℹ️ **估值基礎**: {result['valuation_basis']} - {result.get('quality_note', '')}")
+
+        # 情境分析
+        if 'scenarios' in result:
+            self._display_scenario_analysis(result['scenarios'])
+
         # 詳細分析
         with st.expander("📊 詳細分析"):
             self._display_detailed_analysis(result, params)
@@ -614,6 +626,36 @@ class EnhancedIndividualDCFComponent:
         if params.get('is_auto_data') and params.get('fetched_data'):
             self._display_data_quality_assessment(params['fetched_data'])
     
+    def _display_scenario_analysis(self, scenarios: Dict[str, Any]) -> None:
+        """顯示情境分析結果"""
+        st.markdown("### 🎯 情境分析 (Scenario Analysis)")
+        st.markdown("透過調整成長率與折現率，模擬不同市場情境下的估值範圍。")
+        
+        cols = st.columns(3)
+        
+        # Bear Case
+        with cols[0]:
+            bear = scenarios.get('bear', {})
+            st.error(f"🐻 {bear.get('label', '悲觀')}")
+            st.metric("估值", f"${bear.get('value', 0):.2f}", delta=f"{bear.get('upside', 0)*100:.1f}%")
+            st.caption(f"成長: {bear.get('growth_used', 0):.1%} | 折現: {bear.get('discount_used', 0):.1%}")
+
+        # Base Case
+        with cols[1]:
+            base = scenarios.get('base', {})
+            st.info(f"⚖️ {base.get('label', '基本')}")
+            st.metric("估值", f"${base.get('value', 0):.2f}", delta=f"{base.get('upside', 0)*100:.1f}%")
+            st.caption(f"成長: {base.get('growth_used', 0):.1%} | 折現: {base.get('discount_used', 0):.1%}")
+
+        # Bull Case
+        with cols[2]:
+            bull = scenarios.get('bull', {})
+            st.success(f"🐂 {bull.get('label', '樂觀')}")
+            st.metric("估值", f"${bull.get('value', 0):.2f}", delta=f"{bull.get('upside', 0)*100:.1f}%")
+            st.caption(f"成長: {bull.get('growth_used', 0):.1%} | 折現: {bull.get('discount_used', 0):.1%}")
+        
+        st.divider()
+
     def _display_investment_advice(self, intrinsic_value: float, current_price: float) -> None:
         """顯示投資建議"""
         

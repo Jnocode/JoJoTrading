@@ -1,0 +1,24 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-8.3.5, pluggy-1.6.0 -- D:\Workspace\dev_projects\trading\jojo_trading\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\Workspace\dev_projects\trading\jojo_trading\tests
+configfile: pytest.ini
+plugins: anyio-4.9.0
+collecting ... collected 0 items / 1 error
+
+=================================== ERRORS ====================================
+_____________________ ERROR collecting test_dcf_model.py ______________________
+ImportError while importing test module 'D:\Workspace\dev_projects\trading\jojo_trading\tests\test_dcf_model.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+C:\Users\Jun\AppData\Local\Programs\Python\Python311\Lib\importlib\__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests\test_dcf_model.py:10: in <module>
+    from src.jojo_trading.core.enhanced_dcf import EnhancedDCFModel
+src\jojo_trading\core\enhanced_dcf.py:11: in <module>
+    from jojo_trading.analysis.disposal_detector import DisposalDetector
+E   ImportError: cannot import name 'DisposalDetector' from 'jojo_trading.analysis.disposal_detector' (D:\Workspace\dev_projects\trading\jojo_trading\src\jojo_trading\analysis\disposal_detector.py)
+=========================== short test summary info ===========================
+ERROR tests\test_dcf_model.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+============================== 1 error in 3.95s ===============================

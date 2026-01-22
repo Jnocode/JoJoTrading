@@ -1,0 +1,24 @@
+2026-01-22 08:00:43.067 | WARNING  | importlib._bootstrap:_call_with_frames_removed:241 - Optional: pip install shioaji[speed] or uv add shioaji --extra speed for better performance.
+=== Connector Fix Verification ===
+🎯 Target Profile: 永豐
+Connecting...
+Response Code: 0 | Event Code: 0 | Info: host '210.59.255.161:80', hostname '210.59.255.161:80' IP 210.59.255.161:80 (host 1 of 1) (host connection attempt 1 of 1) (total connection attempt 1 of 1) | Event: Session up
+✅ Shioaji API Connected Successfully (REAL)
+DEBUG: Set callback via set_on_tick_stk_v1_callback
+🔄 Fetching Contracts...
+✅ Contracts Downloaded
+✅ CA Certificate Activated Successfully
+✅ Selected Stock Account: 0613610 (Type: S)
+📦 Accounts Loaded - Stock: True, Future: True
+
+--- Account Verification ---
+✅ Selected Account ID: 0613610
+   Type Value: S
+   Signed: True
+✅ Account Type is correctly 'S' (Stock)!
+
+--- API Call Verification (get_positions) ---
+✅ Position Fetch Success! Count: 1
+   - {'code': '3481', 'qty': 1, 'cost': 26.79, 'pnl': 236.0, 'last_price': 27.15}
+
+=== Verification Complete ===

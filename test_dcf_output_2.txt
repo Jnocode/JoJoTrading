@@ -1,0 +1,13 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-8.3.5, pluggy-1.6.0 -- D:\Workspace\dev_projects\trading\jojo_trading\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: D:\Workspace\dev_projects\trading\jojo_trading\tests
+configfile: pytest.ini
+plugins: anyio-4.9.0
+collecting ... collected 3 items
+
+tests\test_dcf_model.py::TestEnhancedDCFModel::test_fcf_calculation PASSED [ 33%]
+tests\test_dcf_model.py::TestEnhancedDCFModel::test_intrinsic_value_calculation PASSED [ 66%]
+tests\test_dcf_model.py::TestEnhancedDCFModel::test_wacc_calculation PASSED [100%]
+
+============================== 3 passed in 4.42s ==============================

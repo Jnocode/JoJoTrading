@@ -1,0 +1,1019 @@
+//@version=5
+strategy("SuperTrend AI + SMC Fusion [LuxAlgo]", overlay=true, max_labels_count=500
+  , commission_type = strategy.commission.cash_per_contract
+  , commission_value = 60
+  , slippage = 2)
+
+//------------------------------------------------------------------------------
+// SuperTrend AI 設定
+//-----------------------------------------------------------------------------{
+length = input(10, 'ATR 週期長度', group = 'SuperTrend AI 設定')
+
+minMult = input.int(1, '因子範圍', minval = 0, inline = 'factor', group = 'SuperTrend AI 設定')
+maxMult = input.int(5, '', minval = 0, inline = 'factor', group = 'SuperTrend AI 設定')
+step    = input.float(.5, '步長', minval = 0, step = 0.1, group = 'SuperTrend AI 設定')
+
+if minMult > maxMult
+    runtime.error('最小因子大於最大因子')
+
+perfAlpha = input.float(10, '績效記憶長度', minval = 2, group = 'SuperTrend AI 設定')
+fromCluster = input.string('Best', '選擇群組', options = ['Best', 'Average', 'Worst'], group = 'SuperTrend AI 設定', tooltip = 'Best=最佳, Average=平均, Worst=最差')
+
+maxIter = input.int(1000, '最大迭代步數', minval = 0, group = 'SuperTrend AI 設定')
+maxData = input.int(10000, '歷史K棒計算數', minval = 0, group = 'SuperTrend AI 設定')
+
+//------------------------------------------------------------------------------
+// SMC Fusion Settings
+//-----------------------------------------------------------------------------{
+useSMCFilter = input.bool(false, '🔗 啟用 SMC 結構過濾', group = 'SMC Fusion', 
+  tooltip = '開啟後，進場需符合 SMC 結構突破確認\n關閉則維持 SuperTrend AI 基準性能 (+46.39%)')
+
+usePureSMC = input.bool(true, '🎯 純 SMC 模式', group = 'SMC Fusion',
+  tooltip = '開啟後只使用 SMC 結構信號，忽略 SuperTrend AI\n關閉則使用 AI+SMC 融合模式')
+
+swingsLength = input.int(60, 'SMC 搖擺點長度', group = 'SMC Fusion', minval = 10, maxval = 100)
+useStructureConfirm = input.bool(true, 'SMC 結構確認', group = 'SMC Fusion')
+confirmBars = input.int(9, '確認 K 棒數', group = 'SMC Fusion', minval = 1, maxval = 10)
+usePriceFilter = input.bool(false, '價格位置過濾', group = 'SMC Fusion', 
+  tooltip = '做多要求價格在相對低位 (距底部 ≤ 設定百分比)')
+priceFilterPercent = input.float(30, '距離底部百分比', group = 'SMC Fusion', minval = 0, maxval = 50, step = 5)
+// 方向性結構確認：多單僅檢查 swingHigh、空單僅檢查 swingLow；關閉則同時檢查兩者
+useDirectionalConfirm = input.bool(true, '方向性結構確認', group = 'SMC Fusion', tooltip = '多單只檢 swingHigh；空單只檢 swingLow；關閉=同時檢查兩者')
+// 純 SMC 進場是否也套用價格過濾（預設關閉，避免影響既有結果）
+applyPriceFilterPureSMC = input.bool(false, '純 SMC: 套用價格過濾(多單)', group = 'SMC Fusion', tooltip = '開啟後，純 SMC 多單需同時滿足價格位置過濾；空單維持不檢查')
+
+// 純 SMC 出場選項（僅在純 SMC 模式時生效）
+useSMCExitOpposite = input.bool(true, '純 SMC: 反向結構出場', group = 'SMC Fusion', tooltip = '多單: 跌破最近 swingLow；空單: 突破最近 swingHigh 即出場')
+useSMCTrailingExit = input.bool(false, '純 SMC: 極值線出場', group = 'SMC Fusion', tooltip = '多單跌破 trailing.bottom、空單突破 trailing.top 時出場(較緊、減少回撤)')
+
+//------------------------------------------------------------------------------
+// Risk Controls 風險控管（簡化版：僅保留最有效的 ATR 停損）
+//-----------------------------------------------------------------------------{
+// 根據回測結果分析：
+// ✓ ATR停損：提供基本風險保護，預設啟用並放寬至3.0倍避免過度停損
+// ✗ 保本停損：測試顯示反而增加交易次數降低獲利 → 已移除
+// ✗ 最大持倉K數：強制出場干擾趨勢發展 → 已移除  
+// ✗ 日內控制：測試顯示虧損從-22%擴大至-88% → 已移除
+useATRStop = input.bool(true, '風控: ATR 停損（建議啟用）', group = 'Risk Controls', tooltip = '以進場價 ± (ATR×倍數) 作為風險停損。3.0倍提供較寬鬆保護，避免正常波動就被停損')
+atrRiskLen = input.int(14, 'ATR 週期', group = 'Risk Controls', minval = 1)
+atrStopMult = input.float(3.0, 'ATR 倍數', group = 'Risk Controls', step = 0.1, minval = 0.1)
+
+// 追蹤停利設定
+useTrailingStop = input.bool(false, '動態追蹤停利', group = 'Risk Controls', tooltip = '浮盈達標後啟動追蹤停利，讓利潤奔跑同時保護獲利')
+trailActivation = input.float(1.5, '啟動倍數 (×ATR)', group = 'Risk Controls', step = 0.5, tooltip = '浮盈達此倍數後啟動追蹤停利')
+trailDistance = input.float(1.0, '追蹤距離 (×ATR)', group = 'Risk Controls', step = 0.1, tooltip = '停利線距離當前價格的距離')
+
+//------------------------------------------------------------------------------
+// Signal Quality Filters 信號品質過濾器
+//-----------------------------------------------------------------------------{
+// ADX 趨勢強度過濾：只在明確趨勢時交易，避免盤整假突破
+useADXFilter = input.bool(false, 'ADX 趨勢強度過濾', group = 'Signal Filters', tooltip = '只在趨勢強度足夠時進場，過濾盤整期間的假突破')
+adxLength = input.int(14, 'ADX 週期', group = 'Signal Filters', minval = 1)
+adxThreshold = input.float(20, 'ADX 門檻', group = 'Signal Filters', minval = 10, maxval = 50, step = 5, tooltip = '15=弱趨勢, 20=中等, 25=強趨勢, 30=極強')
+
+// EMA 趨勢方向過濾：確保順大趨勢交易
+useEMAFilter = input.bool(false, 'EMA 趨勢方向過濾', group = 'Signal Filters', tooltip = '只在大趨勢方向做單，多單需在EMA上方，空單需在EMA下方')
+emaFilterLength = input.int(50, 'EMA 週期', group = 'Signal Filters', minval = 10, maxval = 200, tooltip = '50=中期, 100=長期, 200=主要趨勢')
+
+// 波動率過濾：避免低波動期間交易
+useVolFilter = input.bool(false, '波動率過濾', group = 'Signal Filters', tooltip = '避免低波動期間交易，確保有足夠獲利空間')
+volLength = input.int(20, '波動率週期', group = 'Signal Filters', minval = 5)
+minVolPct = input.float(0.5, '最低波動率 %', group = 'Signal Filters', step = 0.1, tooltip = '當日波動率需大於此值才交易')
+
+// 多重確認機制
+useMultiConfirm = input.bool(false, '多重確認模式', group = 'Signal Filters', tooltip = '需要多個條件同時符合才進場，提高信號品質')
+minConfirmations = input.int(2, '最少確認數', group = 'Signal Filters', minval = 1, maxval = 3, tooltip = '1=任一, 2=至少2個, 3=全部')
+
+//------------------------------------------------------------------------------
+// Risk Radar System 風險雷達系統
+//-----------------------------------------------------------------------------{
+// VIX 等效設定
+useRiskRadar = input.bool(false, '🚨 啟用風險雷達', group = 'Risk Radar', tooltip = '整合波動率、籌碼面監控，自動調整部位或停止交易')
+vixLength = input.int(14, 'VIX等效週期', group = 'Risk Radar', minval = 5)
+vixMaLength = input.int(50, 'VIX均線週期', group = 'Risk Radar', minval = 10)
+vixPanicThreshold = input.float(2.0, '恐慌門檻倍數', group = 'Risk Radar', step = 0.1, minval = 1.5, tooltip = '波動率超過均值N倍時視為恐慌')
+
+// VVIX 等效設定
+vvixLength = input.int(10, 'VVIX週期', group = 'Risk Radar', minval = 5, tooltip = '波動率的波動率')
+vvixThreshold = input.float(0.5, 'VVIX門檻', group = 'Risk Radar', step = 0.1, tooltip = '超過此值代表市場不穩定')
+
+// SKEW 等效設定
+skewLength = input.int(20, 'SKEW週期', group = 'Risk Radar', minval = 10, tooltip = '尾部風險指標')
+skewTailRisk = input.float(-1.0, '尾部風險門檻', group = 'Risk Radar', step = 0.1, tooltip = '負偏度過大代表崩盤風險')
+
+// 籌碼面設定
+volumeMaLength = input.int(20, '成交量均線週期', group = 'Risk Radar', minval = 5)
+volumeSpikeThreshold = input.float(2.0, '爆量倍數', group = 'Risk Radar', step = 0.1, tooltip = '超過均量N倍視為異常')
+divergenceLength = input.int(10, '背離檢測週期', group = 'Risk Radar', minval = 5)
+
+// 風險管理設定
+maxAllowedRisk = input.float(6.0, '最大允許風險分數', group = 'Risk Radar', step = 0.5, minval = 0, maxval = 10, tooltip = '0-10分，超過此分數停止交易')
+useRiskBasedPosition = input.bool(true, '動態部位調整', group = 'Risk Radar', tooltip = '根據風險分數自動調整部位大小')
+emergencyExitRisk = input.float(8.0, '緊急出場分數', group = 'Risk Radar', step = 0.5, tooltip = '風險突破此分數強制平倉')
+
+//------------------------------------------------------------------------------
+// Style Settings
+//-----------------------------------------------------------------------------{
+bearCss = input(color.red, 'Trailing Stop', inline = 'ts', group = 'Style')
+bullCss = input(color.teal, '', inline = 'ts', group = 'Style')
+
+amaBearCss = input(color.new(color.red, 50), 'AMA', inline = 'ama', group = 'Style')
+amaBullCss = input(color.new(color.teal, 50), '', inline = 'ama', group = 'Style')
+
+showGradient = input(true, 'Candle Coloring', group = 'Style')
+showSignals = input(true, 'Show Signals', group = 'Style')
+showSMCLevels = input.bool(true, '顯示 SMC 極值線', group = 'Style')
+
+showDash  = input(true, 'Show Dashboard', group = 'Dashboard')
+dashLoc  = input.string('Top Right', 'Location', options = ['Top Right', 'Bottom Right', 'Bottom Left'], group = 'Dashboard')
+textSize = input.string('Small', 'Size', options = ['Tiny', 'Small', 'Normal'], group = 'Dashboard')
+
+//-----------------------------------------------------------------------------}
+// SuperTrend AI - UDT's
+//-----------------------------------------------------------------------------{
+type supertrend
+    float upper = hl2
+    float lower = hl2
+    float output
+    float perf = 0
+    float factor
+    int trend = 0
+
+type vector
+    array<float> out
+
+//-----------------------------------------------------------------------------}
+// SMC - UDT's
+//-----------------------------------------------------------------------------{
+type trend
+    int bias
+
+type pivot
+    float currentLevel
+    float lastLevel
+    bool crossed
+    int barTime
+    int barIndex
+
+type trailingExtremes
+    float top
+    float bottom
+    int barTime
+    int barIndex
+    int lastTopTime
+    int lastBottomTime
+
+//-----------------------------------------------------------------------------}
+// Constants
+//-----------------------------------------------------------------------------{
+BULLISH_LEG = 1
+BEARISH_LEG = 0
+BULLISH = +1
+BEARISH = -1
+
+//-----------------------------------------------------------------------------}
+// SuperTrend AI - Supertrend Calculation
+//-----------------------------------------------------------------------------{
+var holder = array.new<supertrend>(0)
+var factors = array.new<float>(0)
+
+if barstate.isfirst
+    for i = 0 to int((maxMult - minMult) / step)
+        factors.push(minMult + i * step)
+        holder.push(supertrend.new())
+
+atr = ta.atr(length)
+
+k = 0
+for factor in factors
+    get_spt = holder.get(k)
+
+    up = hl2 + atr * factor
+    dn = hl2 - atr * factor
+    
+    get_spt.trend := close > get_spt.upper ? 1 : close < get_spt.lower ? 0 : get_spt.trend
+    get_spt.upper := close[1] < get_spt.upper ? math.min(up, get_spt.upper) : up
+    get_spt.lower := close[1] > get_spt.lower ? math.max(dn, get_spt.lower) : dn
+    
+    diff = nz(math.sign(close[1] - get_spt.output))
+    get_spt.perf += 2/(perfAlpha+1) * (nz(close - close[1]) * diff - get_spt.perf)
+    get_spt.output := get_spt.trend == 1 ? get_spt.lower : get_spt.upper
+    get_spt.factor := factor
+    k += 1
+
+//-----------------------------------------------------------------------------}
+// SuperTrend AI - K-means Clustering
+//-----------------------------------------------------------------------------{
+factor_array = array.new<float>(0)
+data = array.new<float>(0)
+
+if last_bar_index - bar_index <= maxData
+    for element in holder
+        data.push(element.perf)
+        factor_array.push(element.factor)
+
+centroids = array.new<float>(0)
+centroids.push(data.percentile_linear_interpolation(25))
+centroids.push(data.percentile_linear_interpolation(50))
+centroids.push(data.percentile_linear_interpolation(75))
+
+var array<vector> factors_clusters = na
+var array<vector> perfclusters = na
+
+if last_bar_index - bar_index <= maxData
+    for _ = 0 to maxIter
+        factors_clusters := array.from(vector.new(array.new<float>(0)), vector.new(array.new<float>(0)), vector.new(array.new<float>(0)))
+        perfclusters := array.from(vector.new(array.new<float>(0)), vector.new(array.new<float>(0)), vector.new(array.new<float>(0)))
+        
+        i = 0
+        for value in data
+            dist = array.new<float>(0)
+            for centroid in centroids
+                dist.push(math.abs(value - centroid))
+
+            idx = dist.indexof(dist.min())
+            perfclusters.get(idx).out.push(value)
+            factors_clusters.get(idx).out.push(factor_array.get(i))
+            i += 1
+
+        new_centroids = array.new<float>(0)
+        for cluster_ in perfclusters
+            new_centroids.push(cluster_.out.avg())
+
+        if new_centroids.get(0) == centroids.get(0) and new_centroids.get(1) == centroids.get(1) and new_centroids.get(2) == centroids.get(2)
+            break
+
+        centroids := new_centroids
+
+//-----------------------------------------------------------------------------}
+// SuperTrend AI - Signals and Trailing Stop
+//-----------------------------------------------------------------------------{
+var float target_factor = na
+var float perf_idx = na
+var float perf_ama = na
+
+var from = switch fromCluster
+    'Best' => 2
+    'Average' => 1
+    'Worst' => 0
+
+den = ta.ema(math.abs(close - close[1]), int(perfAlpha))
+
+if not na(perfclusters)
+    target_factor := nz(factors_clusters.get(from).out.avg(), target_factor)
+    perf_idx := math.max(nz(perfclusters.get(from).out.avg()), 0) / den
+
+var upper = hl2
+var lower = hl2
+var os = 0
+
+up = hl2 + atr * target_factor
+dn = hl2 - atr * target_factor
+upper := close[1] < upper ? math.min(up, upper) : up
+lower := close[1] > lower ? math.max(dn, lower) : dn
+os := close > upper ? 1 : close < lower ? 0 : os
+ts = os ? lower : upper
+
+if na(ts[1]) and not na(ts)
+    perf_ama := ts
+else
+    perf_ama += perf_idx * (ts - perf_ama)
+
+//-----------------------------------------------------------------------------}
+// SMC - Structure Detection Functions (僅在啟用時執行)
+//-----------------------------------------------------------------------------{
+leg(int size) =>
+    var leg = 0
+    newLegHigh = high[size] > ta.highest(high, size)
+    newLegLow = low[size] < ta.lowest(low, size)
+
+    if newLegHigh
+        leg := BEARISH_LEG
+    else if newLegLow
+        leg := BULLISH_LEG
+    leg
+
+startOfNewLeg(int leg) => ta.change(leg) != 0
+startOfBearishLeg(int leg) => ta.change(leg) == -1
+startOfBullishLeg(int leg) => ta.change(leg) == +1
+
+//-----------------------------------------------------------------------------}
+// SMC - Structure State Variables
+//-----------------------------------------------------------------------------{
+var pivot swingHigh = pivot.new(na, na, false, time, bar_index)
+var pivot swingLow = pivot.new(na, na, false, time, bar_index)
+var trend swingTrend = trend.new(0)
+var trailingExtremes trailing = trailingExtremes.new(na, na, na, na, na, na)
+
+//-----------------------------------------------------------------------------}
+// SMC - Structure Update
+//-----------------------------------------------------------------------------{
+getCurrentStructure(int size) =>
+    currentLeg = leg(size)
+    newPivot = startOfNewLeg(currentLeg)
+    pivotLow = startOfBullishLeg(currentLeg)
+    pivotHigh = startOfBearishLeg(currentLeg)
+
+    if newPivot
+        if pivotLow
+            swingLow.lastLevel := swingLow.currentLevel
+            swingLow.currentLevel := low[size]
+            swingLow.crossed := false
+            swingLow.barTime := time[size]
+            swingLow.barIndex := bar_index[size]
+
+            trailing.bottom := swingLow.currentLevel
+            trailing.barTime := swingLow.barTime
+            trailing.barIndex := swingLow.barIndex
+            trailing.lastBottomTime := swingLow.barTime
+        else
+            swingHigh.lastLevel := swingHigh.currentLevel
+            swingHigh.currentLevel := high[size]
+            swingHigh.crossed := false
+            swingHigh.barTime := time[size]
+            swingHigh.barIndex := bar_index[size]
+
+            trailing.top := swingHigh.currentLevel
+            trailing.barTime := swingHigh.barTime
+            trailing.barIndex := swingHigh.barIndex
+            trailing.lastTopTime := swingHigh.barTime
+
+updateTrailingExtremes() =>
+    trailing.top := math.max(high, trailing.top)
+    trailing.lastTopTime := trailing.top == high ? time : trailing.lastTopTime
+    trailing.bottom := math.min(low, trailing.bottom)
+    trailing.lastBottomTime := trailing.bottom == low ? time : trailing.lastBottomTime
+
+detectStructure() =>
+    if ta.crossover(close, swingHigh.currentLevel) and not swingHigh.crossed
+        swingHigh.crossed := true
+        swingTrend.bias := BULLISH
+        true
+    else if ta.crossunder(close, swingLow.currentLevel) and not swingLow.crossed
+        swingLow.crossed := true
+        swingTrend.bias := BEARISH
+        true
+    else
+        false
+
+// 只在啟用 SMC 過濾或純 SMC 模式時才執行結構檢測
+if useSMCFilter or usePureSMC
+    getCurrentStructure(swingsLength)
+    updateTrailingExtremes()
+    detectStructure()
+
+//-----------------------------------------------------------------------------}
+// SMC - Filter Conditions
+//-----------------------------------------------------------------------------{
+var bool smcLongFilter = true
+var bool smcShortFilter = true
+var float pricePositionPercent = na
+var bool isStrongLow = na
+var bool isWeakHigh = na
+var bool longStructureConfirmed = na
+var bool shortStructureConfirmed = na
+var bool pricePositionFilter = na
+
+if useSMCFilter or usePureSMC
+    isStrongLow := swingTrend.bias == BULLISH and not na(trailing.bottom)
+    isWeakHigh := swingTrend.bias == BEARISH and not na(trailing.top)
+    
+    // 方向性 or 雙向結構確認
+    if useDirectionalConfirm
+        longStructureConfirmed := not useStructureConfirm or (bar_index - swingHigh.barIndex >= confirmBars)
+        shortStructureConfirmed := not useStructureConfirm or (bar_index - swingLow.barIndex >= confirmBars)
+    else
+        _bothConfirmed = not useStructureConfirm or (bar_index - swingHigh.barIndex >= confirmBars and bar_index - swingLow.barIndex >= confirmBars)
+        longStructureConfirmed := _bothConfirmed
+        shortStructureConfirmed := _bothConfirmed
+    
+    priceRange = trailing.top - trailing.bottom
+    currentFromBottom = close - trailing.bottom
+    pricePositionPercent := priceRange > 0 ? (currentFromBottom / priceRange) * 100 : 50
+    pricePositionFilter := not usePriceFilter or pricePositionPercent <= priceFilterPercent
+    
+    // SMC 綜合過濾條件（只在啟用時計算）
+    smcLongFilter := isStrongLow and longStructureConfirmed and pricePositionFilter
+    smcShortFilter := isWeakHigh and shortStructureConfirmed
+else
+    // 未啟用時，不進行任何過濾
+    smcLongFilter := true
+    smcShortFilter := true
+    longStructureConfirmed := true
+    shortStructureConfirmed := true
+
+//------------------------------------------------------------------------------
+// Intraday Only (pre-calc) - 進場鎖單用的時間判定
+//-----------------------------------------------------------------------------{
+// 日內控制相關函式已移除（測試顯示虧損擴大4倍）
+// parseToMins, crossedTarget, nearClose, entryLockedByIntraday
+entryLockedByIntraday = false  // 停用日內進場鎖定
+
+//-----------------------------------------------------------------------------}
+// Risk Radar System - 風險雷達計算
+//-----------------------------------------------------------------------------{
+// === VIX 等效：ATR 波動率指數 ===
+var float riskScore = 0.0
+var float positionMultiplier = 1.0
+var bool isPanicMode = false
+var bool isExtremeVolatility = false
+var bool isTailRisk = false
+var bool isVolumePanic = false
+var bool isDivergenceWarning = false
+
+if useRiskRadar
+    // 計算當前波動率
+    currentAtr = ta.atr(vixLength)
+    atrMa = ta.sma(currentAtr, vixMaLength)
+    
+    // VIX 等效值（波動率百分比）
+    vixEquivalent = (currentAtr / close) * 100
+    
+    // 波動率倍數
+    volatilityRatio = currentAtr / atrMa
+    
+    // 恐慌狀態判定
+    isPanicMode := volatilityRatio > vixPanicThreshold
+    isExtremeVolatility := volatilityRatio > 3.0
+    
+    // === VVIX 等效：波動率的波動率 ===
+    atrStddev = ta.stdev(currentAtr, vvixLength)
+    vvixEquivalent = atrStddev / atrMa
+    isVolatilityUnstable = vvixEquivalent > vvixThreshold
+    
+    // === SKEW 等效：價格分布偏度 ===
+    returns = math.log(close / close[1])
+    meanReturn = ta.sma(returns, skewLength)
+    stdReturn = ta.stdev(returns, skewLength)
+    
+    // 簡化偏度計算
+    skewSum = 0.0
+    if stdReturn > 0
+        for i = 0 to skewLength - 1
+            zScore = (returns[i] - meanReturn) / stdReturn
+            skewSum += math.pow(zScore, 3)
+    
+    skewIndicator = skewSum / skewLength
+    isTailRisk := skewIndicator < skewTailRisk
+    isCrashSetup = skewIndicator < -2.0
+    
+    // === 籌碼面監控 ===
+    // 成交量異常
+    volumeMa = ta.sma(volume, volumeMaLength)
+    volumeRatio = volume / volumeMa
+    isVolumeSpike = volumeRatio > volumeSpikeThreshold
+    isExtremeVolume = volumeRatio > 3.0
+    isLowVolume = volumeRatio < 0.5
+    
+    // 價量背離
+    priceSlope = ta.linreg(close, divergenceLength, 0) - ta.linreg(close, divergenceLength, divergenceLength)
+    volumeSlope = ta.linreg(volume, divergenceLength, 0) - ta.linreg(volume, divergenceLength, divergenceLength)
+    isBearishDivergence = priceSlope > 0 and volumeSlope < 0 and close > close[divergenceLength]
+    isBullishDivergence = priceSlope < 0 and volumeSlope < 0 and close < close[divergenceLength]
+    
+    // OBV 主力買賣壓力
+    obvValue = ta.cum(math.sign(close - close[1]) * volume)
+    obvMa = ta.sma(obvValue, 20)
+    obvSlope = obvValue - obvValue[divergenceLength]
+    priceChange = close - close[divergenceLength]
+    isSmartMoneySelling = priceChange > 0 and obvSlope < 0
+    isSmartMoneyBuying = priceChange < 0 and obvSlope > 0
+    
+    // 跳空缺口
+    gapUp = high > high[1] ? (low - high[1]) / high[1] * 100 : 0
+    gapDown = low < low[1] ? (high - low[1]) / low[1] * 100 : 0
+    isGapUp = gapUp > 0.5
+    isPanicGapUp = gapUp > 1.5
+    isGapDown = gapDown > 0.5
+    isPanicGapDown = gapDown > 1.5
+    
+    // === 風險評分（0-10分）===
+    riskScore := 0.0
+    
+    // 1. 波動率恐慌（0-3分）
+    if isExtremeVolatility
+        riskScore += 3.0
+    else if isPanicMode
+        riskScore += 2.0
+    else if volatilityRatio > 1.5
+        riskScore += 1.0
+    
+    // 2. 波動率不穩定（0-2分）
+    if isVolatilityUnstable
+        riskScore += 2.0
+    
+    // 3. 尾部風險（0-2分）
+    if isCrashSetup
+        riskScore += 2.0
+    else if isTailRisk
+        riskScore += 1.0
+    
+    // 4. 成交量異常（0-1分）
+    if isExtremeVolume
+        riskScore += 1.0
+    
+    // 5. 價量背離（0-1分）
+    if isBearishDivergence or isSmartMoneySelling
+        riskScore += 1.0
+        isDivergenceWarning := true
+    
+    // 6. 跳空缺口（0-1分）
+    if isPanicGapUp or isPanicGapDown
+        riskScore += 1.0
+        isVolumePanic := true
+    
+    // === 部位倍數調整 ===
+    if useRiskBasedPosition
+        positionMultiplier := riskScore < 3 ? 1.0 :    // 低風險：滿倉
+                              riskScore < 5 ? 0.75 :   // 中風險：75%
+                              riskScore < 7 ? 0.5 :    // 高風險：50%
+                              0.25                      // 極端風險：25%
+    else
+        positionMultiplier := 1.0
+
+//-----------------------------------------------------------------------------}
+// Signal Quality Filters - 計算信號品質過濾條件
+//-----------------------------------------------------------------------------{
+// ADX 趨勢強度
+[diPlus, diMinus, adx] = ta.dmi(adxLength, adxLength)
+trendStrong = adx > adxThreshold
+adxFilterOk = not useADXFilter or trendStrong
+
+// EMA 趨勢方向
+emaFilter = ta.ema(close, emaFilterLength)
+bullishTrend = close > emaFilter
+bearishTrend = close < emaFilter
+emaLongOk = not useEMAFilter or bullishTrend
+emaShortOk = not useEMAFilter or bearishTrend
+
+// 波動率過濾
+volatilityPct = (ta.atr(volLength) / close) * 100
+volatilityOk = not useVolFilter or volatilityPct >= minVolPct
+
+// 多重確認計數
+longConfirmCount = 0
+shortConfirmCount = 0
+
+if not useADXFilter or trendStrong
+    longConfirmCount += 1
+    shortConfirmCount += 1
+
+if not useEMAFilter or bullishTrend
+    longConfirmCount += 1
+if not useEMAFilter or bearishTrend
+    shortConfirmCount += 1
+
+if not useVolFilter or volatilityOk
+    longConfirmCount += 1
+    shortConfirmCount += 1
+
+// 判斷是否符合最少確認數
+multiConfirmLongOk = not useMultiConfirm or longConfirmCount >= minConfirmations
+multiConfirmShortOk = not useMultiConfirm or shortConfirmCount >= minConfirmations
+
+// 綜合過濾結果
+qualityLongFilter = adxFilterOk and emaLongOk and volatilityOk and multiConfirmLongOk
+qualityShortFilter = adxFilterOk and emaShortOk and volatilityOk and multiConfirmShortOk
+
+//-----------------------------------------------------------------------------}
+// Strategy Entry Logic - Fusion
+//-----------------------------------------------------------------------------{
+// 主信號：SuperTrend AI crossover
+aiLongSignal = ta.crossover(close, perf_ama)
+aiShortSignal = ta.crossunder(close, perf_ama)
+
+// 純 SMC 模式：使用設定區的 usePureSMC（已宣告）
+
+// SMC 純信號（結構突破時進場）
+// 注意：不可同時檢查 crossed，因為 detectStructure() 已在同一根 K 棒將 crossed 設為 true，會導致訊號被過濾
+smcPureLongSignal = ta.crossover(close, swingHigh.currentLevel)
+smcPureShortSignal = ta.crossunder(close, swingLow.currentLevel)
+
+// 選擇信號模式並加入信號品質過濾
+// 純 SMC 多單可選擇性套用價格過濾；並在日內鎖單期間不進場
+pureSMCLongPriceOk = not applyPriceFilterPureSMC or (not na(pricePositionPercent) and pricePositionPercent <= priceFilterPercent)
+longCondition = (usePureSMC ? (smcPureLongSignal and longStructureConfirmed and pureSMCLongPriceOk) : (aiLongSignal and smcLongFilter)) and qualityLongFilter and not entryLockedByIntraday
+shortCondition = (usePureSMC ? (smcPureShortSignal and shortStructureConfirmed) : (aiShortSignal and smcShortFilter)) and qualityShortFilter and not entryLockedByIntraday
+
+// === 風險雷達過濾與部位調整 ===
+tradingAllowed = not useRiskRadar or riskScore < maxAllowedRisk
+longConditionWithRisk = longCondition and tradingAllowed
+shortConditionWithRisk = shortCondition and tradingAllowed
+
+if (longConditionWithRisk)
+    commentText = usePureSMC ? "SMC買" : (useSMCFilter ? "AI+SMC買" : "AI買")
+    if useRiskRadar
+        commentText := commentText + " R:" + str.tostring(riskScore, "#.#")
+    strategy.entry("Long", strategy.long, comment = commentText)
+
+if (shortConditionWithRisk)
+    commentText = usePureSMC ? "SMC賣" : (useSMCFilter ? "AI+SMC賣" : "AI賣")
+    if useRiskRadar
+        commentText := commentText + " R:" + str.tostring(riskScore, "#.#")
+    strategy.entry("Short", strategy.short, comment = commentText)
+
+// 純 SMC 出場邏輯（選用）
+if usePureSMC
+    // 反向結構出場
+    longExitOpposite = useSMCExitOpposite and ta.crossunder(close, swingLow.currentLevel)
+    shortExitOpposite = useSMCExitOpposite and ta.crossover(close, swingHigh.currentLevel)
+
+    // 極值線出場（較為緊密）
+    longExitTrailing = useSMCTrailingExit and close < trailing.bottom
+    shortExitTrailing = useSMCTrailingExit and close > trailing.top
+
+    longExitCondition = longExitOpposite or longExitTrailing
+    shortExitCondition = shortExitOpposite or shortExitTrailing
+
+    if strategy.position_size > 0 and longExitCondition
+        strategy.close("Long", comment = "SMC出場")
+    if strategy.position_size < 0 and shortExitCondition
+        strategy.close("Short", comment = "SMC出場")
+
+//------------------------------------------------------------------------------
+// Risk Controls Exits - 所有模式適用（預設關閉）
+// 目標：降低資本回撤與單筆損失，並避免久抱不動造成回吐
+//-----------------------------------------------------------------------------{
+// 風險 ATR
+atrRisk = ta.atr(atrRiskLen)
+
+// 已移除變數（因保本停損和最大持倉K數風控已移除）：
+// - barsInTrade（用於最大持倉K數）
+// - highestSinceEntry / lowestSinceEntry（用於保本停損判定）
+
+// 風控出場條件（簡化版：僅保留 ATR 停損）
+longExitATR  = useATRStop and strategy.position_size > 0 and close <= strategy.position_avg_price - atrRisk * atrStopMult
+shortExitATR = useATRStop and strategy.position_size < 0 and close >= strategy.position_avg_price + atrRisk * atrStopMult
+
+// 已移除無效風控（測試證明增加交易次數但降低獲利）：
+// - 保本停損 (useBreakEven, breakEvenAtrMult)
+// - 最大持倉K數 (useMaxBarsExit, maxBarsInTrade)
+
+// 簡化後的風控出場條件
+riskLongExit  = longExitATR
+riskShortExit = shortExitATR
+
+if riskLongExit and strategy.position_size > 0
+    strategy.close("Long", comment = "風控出場")
+if riskShortExit and strategy.position_size < 0
+    strategy.close("Short", comment = "風控出場")
+
+//------------------------------------------------------------------------------
+// Risk Radar Emergency Exit - 風險雷達緊急出場
+//-----------------------------------------------------------------------------{
+if useRiskRadar
+    // 風險突然飆升時強制平倉
+    riskSpike = riskScore > emergencyExitRisk and riskScore[1] <= emergencyExitRisk
+    
+    if strategy.position_size > 0 and riskSpike
+        strategy.close("Long", comment = "🚨風險飆升")
+    
+    if strategy.position_size < 0 and riskSpike
+        strategy.close("Short", comment = "🚨風險飆升")
+    
+    // 持續高風險時也要出場（風險分數連續3根K棒>緊急分數）
+    highRiskDuration = riskScore > emergencyExitRisk and riskScore[1] > emergencyExitRisk and riskScore[2] > emergencyExitRisk
+    
+    if strategy.position_size != 0 and highRiskDuration
+        strategy.close_all(comment = "🚨持續高風險")
+
+//------------------------------------------------------------------------------
+// Trailing Stop - 動態追蹤停利
+//-----------------------------------------------------------------------------{
+var float longTrailStop = na
+var float shortTrailStop = na
+
+if strategy.position_size > 0  // 多單追蹤停利
+    activationPrice = strategy.position_avg_price + trailActivation * atrRisk
+    // 達到啟動價格後開始追蹤
+    if high >= activationPrice or not na(longTrailStop)
+        newStop = high - trailDistance * atrRisk
+        longTrailStop := na(longTrailStop) ? newStop : math.max(longTrailStop, newStop)
+    
+    // 觸發追蹤停利出場
+    if useTrailingStop and not na(longTrailStop) and close <= longTrailStop
+        strategy.close("Long", comment = "追蹤停利")
+        longTrailStop := na
+
+else if strategy.position_size < 0  // 空單追蹤停利
+    activationPrice = strategy.position_avg_price - trailActivation * atrRisk
+    // 達到啟動價格後開始追蹤
+    if low <= activationPrice or not na(shortTrailStop)
+        newStop = low + trailDistance * atrRisk
+        shortTrailStop := na(shortTrailStop) ? newStop : math.min(shortTrailStop, newStop)
+    
+    // 觸發追蹤停利出場
+    if useTrailingStop and not na(shortTrailStop) and close >= shortTrailStop
+        strategy.close("Short", comment = "追蹤停利")
+        shortTrailStop := na
+
+else  // 無持倉時重置
+    longTrailStop := na
+    shortTrailStop := na
+
+//------------------------------------------------------------------------------
+// Dynamic Hard Stops via strategy.exit - 將出場條件轉為即時停損單
+// 說明：避免只用收盤價判斷而延遲出場，將以下條件聚合為動態停損：
+// - 純 SMC: 反向結構出場（最近 swingLow/swingHigh）
+// - 純 SMC: 極值線出場（trailing.bottom/top）
+// - 風控: ATR 停損（進場均價 ± ATR×倍數）
+// 規則：
+//   多單停損 = 取「最高的」候選價位（越高越緊）
+//   空單停損 = 取「最低的」候選價位（越低越緊）
+// 注意：僅在對應開關為 ON 且持倉中才會下單
+//-----------------------------------------------------------------------------{
+var float dynLongStop = na
+var float dynShortStop = na
+
+// 聚合多單停損候選
+dynLongStop := na
+if strategy.position_size > 0
+    // ATR 停損
+    if useATRStop
+        atrStopLong = strategy.position_avg_price - atrRisk * atrStopMult
+        dynLongStop := na(dynLongStop) ? atrStopLong : math.max(dynLongStop, atrStopLong)
+    // 反向結構（最近 swingLow）
+    if useSMCExitOpposite and usePureSMC and not na(swingLow.currentLevel)
+        dynLongStop := na(dynLongStop) ? swingLow.currentLevel : math.max(dynLongStop, swingLow.currentLevel)
+    // 極值線（trailing.bottom）
+    if useSMCTrailingExit and usePureSMC and not na(trailing.bottom)
+        dynLongStop := na(dynLongStop) ? trailing.bottom : math.max(dynLongStop, trailing.bottom)
+
+// 聚合空單停損候選
+dynShortStop := na
+if strategy.position_size < 0
+    // ATR 停損
+    if useATRStop
+        atrStopShort = strategy.position_avg_price + atrRisk * atrStopMult
+        dynShortStop := na(dynShortStop) ? atrStopShort : math.min(dynShortStop, atrStopShort)
+    // 反向結構（最近 swingHigh）
+    if useSMCExitOpposite and usePureSMC and not na(swingHigh.currentLevel)
+        dynShortStop := na(dynShortStop) ? swingHigh.currentLevel : math.min(dynShortStop, swingHigh.currentLevel)
+    // 極值線（trailing.top）
+    if useSMCTrailingExit and usePureSMC and not na(trailing.top)
+        dynShortStop := na(dynShortStop) ? trailing.top : math.min(dynShortStop, trailing.top)
+
+// 發送/更新停損單（每根K線更新一次）
+if strategy.position_size > 0 and not na(dynLongStop)
+    strategy.exit("Long-Exits", from_entry = "Long", stop = dynLongStop)
+else
+    // 若無多單或無停損候選，確保不殘留舊單
+    strategy.cancel("Long-Exits")
+
+if strategy.position_size < 0 and not na(dynShortStop)
+    strategy.exit("Short-Exits", from_entry = "Short", stop = dynShortStop)
+else
+    // 若無空單或無停損候選，確保不殘留舊單
+    strategy.cancel("Short-Exits")
+
+//------------------------------------------------------------------------------
+// Intraday Only - 日內控制已移除
+//-----------------------------------------------------------------------------{
+// 測試結果顯示：啟用日內控制後虧損從 -22% 擴大至 -88%（4倍）
+// 原因：強制平倉干擾趨勢發展，增加150次額外出場
+// 決策：完全移除此功能
+
+//-----------------------------------------------------------------------------}
+// Dashboard
+//-----------------------------------------------------------------------------{
+var table_position = dashLoc == 'Bottom Left' ? position.bottom_left 
+  : dashLoc == 'Top Right' ? position.top_right 
+  : position.bottom_right
+
+var table_size = textSize == 'Tiny' ? size.tiny 
+  : textSize == 'Small' ? size.small 
+  : size.normal
+
+// 如果啟用風險雷達，擴展表格至12行（索引0-11）
+var table_rows = useRiskRadar ? 12 : 8
+
+var tb = table.new(table_position, 5, table_rows
+  , bgcolor = #1e222d
+  , border_color = #373a46
+  , border_width = 1
+  , frame_color = #373a46
+  , frame_width = 1)
+
+if showDash
+    if barstate.isfirst
+        tb.cell(0, 0, 'Cluster', text_color = color.white, text_size = table_size)
+        tb.cell(0, 1, 'Best', text_color = color.white, text_size = table_size)
+        tb.cell(0, 2, 'Average', text_color = color.white, text_size = table_size)
+        tb.cell(0, 3, 'Worst', text_color = color.white, text_size = table_size)
+    
+        tb.cell(1, 0, 'Size', text_color = color.white, text_size = table_size)
+        tb.cell(2, 0, 'Centroid Dispersion', text_color = color.white, text_size = table_size)
+        tb.cell(3, 0, 'Factors', text_color = color.white, text_size = table_size)
+        
+        // SMC 狀態列
+        tb.cell(4, 0, '🔗 SMC Filter', text_color = color.white, text_size = table_size)
+    
+    if barstate.islast
+        topN = perfclusters.get(2).out.size()
+        midN = perfclusters.get(1).out.size()
+        btmN = perfclusters.get(0).out.size()
+
+        tb.cell(1, 1, str.tostring(topN), text_color = color.white, text_size = table_size)
+        tb.cell(1, 2, str.tostring(midN), text_color = color.white, text_size = table_size)
+        tb.cell(1, 3, str.tostring(btmN), text_color = color.white, text_size = table_size)
+        
+        tb.cell(3, 1, str.tostring(factors_clusters.get(2).out), text_color = color.white, text_size = table_size, text_halign = text.align_left)
+        tb.cell(3, 2, str.tostring(factors_clusters.get(1).out), text_color = color.white, text_size = table_size, text_halign = text.align_left)
+        tb.cell(3, 3, str.tostring(factors_clusters.get(0).out), text_color = color.white, text_size = table_size, text_halign = text.align_left)
+
+        i = 0
+        for cluster_ in perfclusters
+            disp = 0.
+            if cluster_.out.size() > 1
+                for value in cluster_.out
+                    disp += math.abs(value - centroids.get(i))
+            
+            disp /= switch i
+                0 => btmN
+                1 => midN
+                2 => topN
+
+            i += 1
+            tb.cell(2, 4 - i, str.tostring(disp, '#.####'), text_color = color.white, text_size = table_size)
+
+        // SMC 狀態顯示
+        smcStatus = useSMCFilter ? '✓ ON' : '✗ OFF'
+        smcColor = useSMCFilter ? color.green : color.gray
+        tb.cell(4, 1, smcStatus, text_color = smcColor, text_size = table_size)
+        
+        if useSMCFilter
+            smcTrendText = swingTrend.bias == BULLISH ? '↑ BULL' : swingTrend.bias == BEARISH ? '↓ BEAR' : '—'
+            smcTrendColor = swingTrend.bias == BULLISH ? color.green : swingTrend.bias == BEARISH ? color.red : color.gray
+            tb.cell(4, 2, smcTrendText, text_color = smcTrendColor, text_size = table_size)
+            
+            if usePriceFilter and not na(pricePositionPercent)
+                tb.cell(4, 3, str.tostring(math.round(pricePositionPercent, 1)) + '%', text_color = color.white, text_size = table_size)
+
+        // 若是純 SMC 且有啟用價格過濾，也顯示當前相對位置百分比
+        if usePureSMC and applyPriceFilterPureSMC and not na(pricePositionPercent)
+            tb.cell(4, 3, str.tostring(math.round(pricePositionPercent, 1)) + '%', text_color = color.white, text_size = table_size)
+
+        // 顯示 Pure SMC 狀態
+        tb.cell(4, 4, usePureSMC ? '🎯 PURE' : '', text_color = usePureSMC ? color.new(color.teal, 0) : color.gray, text_size = table_size)
+
+//-----------------------------------------------------------------------------}
+// Signal Quality Filters Dashboard
+//-----------------------------------------------------------------------------{
+if showDash and barstate.islast
+    // ADX 過濾器狀態
+    adxStatusText = useADXFilter ? '✓ ADX(' + str.tostring(adxThreshold, '#') + ')' : '✗ ADX'
+    adxValueText = str.tostring(math.round(adx, 1))
+    adxColor = useADXFilter ? (trendStrong ? color.green : color.red) : color.gray
+    tb.cell(0, 5, adxStatusText, text_color = adxColor, text_size = table_size)
+    tb.cell(1, 5, adxValueText, text_color = trendStrong ? color.green : color.orange, text_size = table_size)
+    
+    // EMA 過濾器狀態
+    emaStatusText = useEMAFilter ? '✓ EMA(' + str.tostring(emaFilterLength) + ')' : '✗ EMA'
+    emaTrendText = bullishTrend ? '↑ BULL' : bearishTrend ? '↓ BEAR' : '—'
+    emaColor = useEMAFilter ? (bullishTrend or bearishTrend ? color.green : color.red) : color.gray
+    emaTrendColor = bullishTrend ? color.green : bearishTrend ? color.red : color.gray
+    tb.cell(2, 5, emaStatusText, text_color = emaColor, text_size = table_size)
+    tb.cell(3, 5, emaTrendText, text_color = emaTrendColor, text_size = table_size)
+    
+    // 波動率過濾器狀態
+    volStatusText = useVolFilter ? '✓ VOL(' + str.tostring(minVolPct, '#.#') + '%)' : '✗ VOL'
+    volValueText = str.tostring(volatilityPct, '#.##') + '%'
+    volColor = useVolFilter ? (volatilityOk ? color.green : color.red) : color.gray
+    volValueColor = volatilityOk ? color.green : color.orange
+    tb.cell(0, 6, volStatusText, text_color = volColor, text_size = table_size)
+    tb.cell(1, 6, volValueText, text_color = volValueColor, text_size = table_size)
+    
+    // 多重確認狀態
+    if useMultiConfirm
+        confirmText = '🎯 ' + str.tostring(minConfirmations) + '/3'
+        tb.cell(2, 6, confirmText, text_color = color.new(color.purple, 0), text_size = table_size)
+        
+        // 顯示當前多空確認數
+        longConfirmText = '📈 ' + str.tostring(longConfirmCount)
+        shortConfirmText = '📉 ' + str.tostring(shortConfirmCount)
+        tb.cell(3, 6, longConfirmText, text_color = multiConfirmLongOk ? color.green : color.orange, text_size = table_size)
+        tb.cell(4, 6, shortConfirmText, text_color = multiConfirmShortOk ? color.green : color.orange, text_size = table_size)
+    
+    // 追蹤停利狀態
+    trailStatusText = useTrailingStop ? '✓ TRAIL' : '✗ TRAIL'
+    trailColor = useTrailingStop ? color.new(color.lime, 0) : color.gray
+    tb.cell(0, 7, trailStatusText, text_color = trailColor, text_size = table_size)
+    
+    if useTrailingStop
+        trailParamsText = str.tostring(trailActivation, '#.#') + 'x / ' + str.tostring(trailDistance, '#.#') + 'x'
+        tb.cell(1, 7, trailParamsText, text_color = color.white, text_size = table_size)
+        
+        // 顯示是否已啟動
+        if not na(longTrailStop)
+            tb.cell(2, 7, '🟢 ON', text_color = color.lime, text_size = table_size)
+        if not na(shortTrailStop)
+            tb.cell(3, 7, '🔴 ON', text_color = color.red, text_size = table_size)
+    
+    // === 風險雷達儀表板 ===
+    if useRiskRadar
+        // 第8行：風險評分總覽
+        color riskColor = riskScore < 3 ? color.new(color.green, 0) : riskScore < 5 ? color.new(color.yellow, 0) : riskScore < 7 ? color.new(color.orange, 0) : color.new(color.red, 0)
+        
+        string riskLevel = riskScore < 3 ? '🟢低風險' : riskScore < 5 ? '🟡中風險' : riskScore < 7 ? '🟠高風險' : '🔴極端'
+        
+        tb.cell(0, 8, '🚨 風險分數', text_color = color.white, text_size = table_size)
+        tb.cell(1, 8, str.tostring(riskScore, '#.#') + '/10', text_color = riskColor, text_size = table_size)
+        tb.cell(2, 8, riskLevel, text_color = riskColor, text_size = table_size)
+        
+        // 顯示部位倍數
+        string posText = str.tostring(positionMultiplier * 100, '#') + '%'
+        tb.cell(3, 8, posText, text_color = positionMultiplier < 1 ? color.orange : color.green, text_size = table_size)
+        
+        // 交易許可狀態
+        string allowText = tradingAllowed ? '✓ 允許' : '✗ 禁止'
+        tb.cell(4, 8, allowText, text_color = tradingAllowed ? color.green : color.red, text_size = table_size)
+        
+        // 第9行：VIX 等效（波動率）
+        float currentAtrDash = ta.atr(vixLength)
+        float atrMaDash = ta.sma(currentAtrDash, vixMaLength)
+        float volatilityRatioDash = currentAtrDash / atrMaDash
+        float vixEquivalentDash = (currentAtrDash / close) * 100
+        
+        tb.cell(0, 9, 'VIX等效', text_color = color.white, text_size = table_size)
+        tb.cell(1, 9, str.tostring(vixEquivalentDash, '#.##') + '%', text_color = isPanicMode ? color.red : color.green, text_size = table_size)
+        
+        string volStatus = isExtremeVolatility ? '💀極端' : isPanicMode ? '⚠️恐慌' : volatilityRatioDash > 1.5 ? '📈偏高' : '✓正常'
+        tb.cell(2, 9, volStatus, text_color = isPanicMode ? color.red : volatilityRatioDash > 1.5 ? color.orange : color.green, text_size = table_size)
+        
+        tb.cell(3, 9, str.tostring(volatilityRatioDash, '#.##') + 'x', text_color = color.white, text_size = table_size)
+        
+        // 第10行：籌碼面（成交量）
+        float volumeMaDash = ta.sma(volume, volumeMaLength)
+        float volumeRatioDash = volume / volumeMaDash
+        
+        tb.cell(0, 10, '📊 成交量', text_color = color.white, text_size = table_size)
+        
+        string volText = volumeRatioDash > 3 ? '💥爆量' : volumeRatioDash > 2 ? '⚡異常' : volumeRatioDash < 0.5 ? '🔻縮量' : '✓正常'
+        color volColor = volumeRatioDash > 2 ? color.red : volumeRatioDash < 0.5 ? color.orange : color.green
+        tb.cell(1, 10, volText, text_color = volColor, text_size = table_size)
+        tb.cell(2, 10, str.tostring(volumeRatioDash, '#.##') + 'x', text_color = color.white, text_size = table_size)
+        
+        // 價量背離警告
+        if isDivergenceWarning
+            tb.cell(3, 10, '📉背離', text_color = color.red, text_size = table_size)
+        else
+            tb.cell(3, 10, '✓健康', text_color = color.green, text_size = table_size)
+        
+        // 第11行：尾部風險（SKEW等效）
+        float returnsDash = math.log(close / close[1])
+        float meanReturnDash = ta.sma(returnsDash, skewLength)
+        float stdReturnDash = ta.stdev(returnsDash, skewLength)
+        float skewSumDash = 0.0
+        if stdReturnDash > 0
+            for i = 0 to skewLength - 1
+                float zScoreDash = (returnsDash[i] - meanReturnDash) / stdReturnDash
+                skewSumDash += math.pow(zScoreDash, 3)
+        float skewIndicatorDash = skewSumDash / skewLength
+        
+        tb.cell(0, 11, 'SKEW等效', text_color = color.white, text_size = table_size)
+        tb.cell(1, 11, str.tostring(skewIndicatorDash, '#.##'), text_color = isTailRisk ? color.red : color.green, text_size = table_size)
+        
+        string skewStatus = skewIndicatorDash < -2 ? '💀崩盤' : skewIndicatorDash < -1 ? '⚠️尾險' : skewIndicatorDash < 0 ? '📉偏空' : '✓正常'
+        tb.cell(2, 11, skewStatus, text_color = isTailRisk ? color.red : color.green, text_size = table_size)
+
+//-----------------------------------------------------------------------------}
+// Plots
+//-----------------------------------------------------------------------------{
+css = os ? bullCss : bearCss
+
+plot(ts, 'Trailing Stop', os != os[1] ? na : css)
+
+plot(perf_ama, 'Trailing Stop AMA',
+  ta.cross(close, perf_ama) ? na
+  : close > perf_ama ? amaBullCss : amaBearCss)
+
+barcolor(showGradient ? color.from_gradient(perf_idx, 0, 1, color.new(css, 80), css) : na)
+
+// SMC 極值線
+plot(showSMCLevels and (useSMCFilter or usePureSMC) ? trailing.top : na, 'SMC Top', color = color.new(color.red, 70), linewidth = 1, style = plot.style_stepline)
+plot(showSMCLevels and (useSMCFilter or usePureSMC) ? trailing.bottom : na, 'SMC Bottom', color = color.new(color.green, 70), linewidth = 1, style = plot.style_stepline)
+
+// Signal Quality Filters - EMA 趨勢線
+plot(useEMAFilter ? emaFilter : na, 'EMA 趨勢線', color = color.new(color.yellow, 50), linewidth = 2)
+
+// 追蹤停利線
+plot(useTrailingStop ? longTrailStop : na, '多單追蹤停利', color = color.new(color.lime, 30), linewidth = 2, style = plot.style_cross)
+plot(useTrailingStop ? shortTrailStop : na, '空單追蹤停利', color = color.new(color.red, 30), linewidth = 2, style = plot.style_cross)
+
+// 信號標籤
+if showSignals
+    if longCondition
+        labelText = usePureSMC ? '📍SMC\n買入' : (useSMCFilter ? '🔗 AI+SMC\n' + str.tostring(int(perf_idx * 10)) : str.tostring(int(perf_idx * 10)))
+        label.new(bar_index, low, labelText
+          , color = bullCss
+          , style = label.style_label_up
+          , textcolor = color.white
+          , size = size.tiny)
+
+    if shortCondition
+        labelText = usePureSMC ? '📍SMC\n賣出' : (useSMCFilter ? '🔗 AI+SMC\n' + str.tostring(int(perf_idx * 10)) : str.tostring(int(perf_idx * 10)))
+        label.new(bar_index, high, labelText
+          , color = bearCss
+          , style = label.style_label_down
+          , textcolor = color.white
+          , size = size.tiny)

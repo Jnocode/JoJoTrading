@@ -84,116 +84,37 @@ class SectorScreeningComponent:
         
         return {'selected_industry': selected_industry}
     
-    def _render_dcf_parameters(self) -> Dict[str, Any]:
-        """渲染DCF參數設定"""
-        st.markdown("**DCF 估值參數**")
-        
-        risk_preference = st.slider(
-            "風險補償 (%)", 
-            min_value=3.0, 
-            max_value=15.0, 
-            value=self.default_values['risk_preference'], 
-            step=0.5
-        ) / 100
-        
-        potential_return_threshold = st.slider(
-            "篩選閾值 (%)", 
-            min_value=5.0, 
-            max_value=50.0, 
-            value=self.default_values['potential_return_threshold'], 
-            step=1.0,
-            help="只顯示潛在回報超過此閾值的股票"
-        ) / 100
-        
-        growth_rate = st.slider(
-            "短期成長率 (%)", 
-            min_value=0.0, 
-            max_value=25.0, 
-            value=self.default_values['growth_rate'], 
-            step=0.5
-        ) / 100
-        
-        terminal_growth = st.slider(
-            "永續成長率 (%)", 
-            min_value=1.0, 
-            max_value=5.0, 
-            value=self.default_values['terminal_growth'], 
-            step=0.1
-        ) / 100
-        
-        return {
-            'risk_preference': risk_preference,
-            'potential_return_threshold': potential_return_threshold,
-            'growth_rate': growth_rate,
-            'terminal_growth': terminal_growth
-        }
     
+    def _render_dcf_parameters(self) -> Dict[str, Any]:
+        """渲染DCF參數設定 (自動化模式)"""
+        # 自動化模式：不再顯示複雜參數，直接使用專業預設值
+        # Professional Defaults (Hardcoded)
+        defaults = {
+            'screening_mode': 'screening', # 只顯示低估股票
+            'max_stocks': 0, # 不限制
+            'risk_preference': 0.08, # 8% Risk Premium + RFR -> ~10-12% Discount Rate (Conservative)
+            'potential_return_threshold': 0.15, # 至少 15% 潛在回報才顯示
+            'growth_rate': 0.05, # 5% 短期成長 (保守)
+            'terminal_growth': 0.02 # 2% 永續成長 (通膨水準)
+        }
+        
+        st.info("ℹ️ 系統已自動套用法人級估值參數 (折現率約 10%, 永續成長 2%)")
+        
+        return defaults
+
     def _render_growth_filter_settings(self) -> Dict[str, Any]:
-        """渲染成長股篩選設定"""
-        st.markdown("**成長股篩選條件**")
-        enable_growth_filter = st.checkbox(
-            "啟用成長股篩選", 
-            value=False,
-            help="啟用後將只保留符合成長條件的股票"
-        )
-        
-        growth_params: Dict[str, Any] = {'enable_growth_filter': enable_growth_filter}
-        
-        if enable_growth_filter:
-            with st.expander("成長股條件設定"):
-                # 營收CAGR設定
-                revenue_cagr_enabled = st.checkbox("營收 CAGR", value=True)
-                revenue_cagr_threshold = self.default_values['revenue_cagr_threshold']
-                if revenue_cagr_enabled:
-                    revenue_cagr_threshold = st.number_input(
-                        "營收 CAGR 閾值 (%)", 
-                        min_value=0.0, 
-                        max_value=100.0, 
-                        value=self.default_values['revenue_cagr_threshold'], 
-                        step=1.0
-                    )
-                
-                # EPS CAGR設定  
-                eps_cagr_enabled = st.checkbox("EPS CAGR", value=True)
-                eps_cagr_threshold = self.default_values['eps_cagr_threshold']
-                if eps_cagr_enabled:
-                    eps_cagr_threshold = st.number_input(
-                        "EPS CAGR 閾值 (%)", 
-                        min_value=0.0, 
-                        max_value=100.0,
-                        value=self.default_values['eps_cagr_threshold'], 
-                        step=1.0
-                    )
-                
-                # ROE設定
-                roe_enabled = st.checkbox("ROE", value=True)
-                roe_threshold = self.default_values['roe_threshold']
-                if roe_enabled:
-                    roe_threshold = st.number_input(
-                        "ROE 閾值 (%)", 
-                        min_value=0.0, 
-                        max_value=100.0,
-                        value=self.default_values['roe_threshold'], 
-                        step=1.0
-                    )
-                
-                growth_logic = st.radio(
-                    "條件邏輯",
-                    options=["AND (所有條件都要符合)", "OR (任一條件符合即可)"],
-                    index=0
-                )
-                
-                growth_params.update({
-                    'revenue_cagr_enabled': revenue_cagr_enabled,
-                    'revenue_cagr_threshold': revenue_cagr_threshold,
-                    'eps_cagr_enabled': eps_cagr_enabled,
-                    'eps_cagr_threshold': eps_cagr_threshold,
-                    'roe_enabled': roe_enabled,
-                    'roe_threshold': roe_threshold,
-                    'growth_logic': growth_logic
-                })
-        
-        return growth_params
+        """渲染成長股篩選設定 (自動化模式)"""
+        # 自動化模式：隱藏成長股篩選細節，使用預設過濾
+        return {
+            'enable_growth_filter': True, # 強制開啟基本面過濾
+            'revenue_cagr_enabled': True,
+            'revenue_cagr_threshold': 0.0, # 只要正成長
+            'eps_cagr_enabled': True, 
+            'eps_cagr_threshold': 0.0, # 只要正成長
+            'roe_enabled': True,
+            'roe_threshold': 10.0, # ROE > 10% (基本門檻)
+            'growth_logic': 'AND'
+        }
     
     def render_results_panel(self, machine, params: Dict[str, Any]) -> None:
         """渲染結果面板
@@ -225,7 +146,9 @@ class SectorScreeningComponent:
             'potential_return_threshold': params['potential_return_threshold'],
             'dcf_short_term_growth_rate': params['growth_rate'],
             'dcf_terminal_growth_rate': params['terminal_growth'],
-            'enable_growth_filter': params['enable_growth_filter']
+            'enable_growth_filter': params['enable_growth_filter'],
+            'screening_mode': params.get('screening_mode', 'screening'),
+            'max_stocks': params.get('max_stocks', 30)
         })
         
         if params['enable_growth_filter']:
@@ -306,19 +229,26 @@ class SectorScreeningComponent:
     def _display_data_fetch_progress(self, machine) -> None:
         """顯示數據獲取進度"""
         st.warning("📡 正在獲取財務數據...")
+        
+        # 建立進度條元件
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # 定義回調函數
+        def update_progress(current, total, stock_code, stock_name):
+            percent = min(int((current / total) * 100), 100)
+            progress_bar.progress(percent)
+            status_text.text(f"正在處理 ({current}/{total}): {stock_code} {stock_name}")
+            
+        # 將回調函數注入到 context 中
+        machine.context['progress_callback'] = update_progress
+        
         with st.spinner("正在從 FinMind 抓取財務數據，請稍候..."):
-            # 簡化的進度顯示
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            status_text.text("正在準備數據獲取...")
-            progress_bar.progress(20)
-            
             # 執行實際的數據獲取
             machine.execute_state()
             
-            progress_bar.progress(100)
-            status_text.text("✅ 數據獲取完成")
+        progress_bar.progress(100)
+        status_text.text("✅ 數據獲取完成")
             
         st.rerun()
     
@@ -405,9 +335,9 @@ class SectorScreeningComponent:
             machine: 狀態機實例
             params: 篩選參數
         """
-        with st.expander("📈 篩選統計"):
-            avg_return = sum(r.get('potential_return', 0) for r in filtered_results) / len(filtered_results) * 100
-            avg_intrinsic = sum(r.get('intrinsic_value_per_share', 0) for r in filtered_results) / len(filtered_results)
+        with st.expander("📈 篩選統計與排除原因", expanded=True):
+            avg_return = sum(r.get('potential_return', 0) for r in filtered_results) / len(filtered_results) * 100 if filtered_results else 0
+            avg_intrinsic = sum(r.get('intrinsic_value_per_share', 0) for r in filtered_results) / len(filtered_results) if filtered_results else 0
             
             col_stat1, col_stat2, col_stat3 = st.columns(3)
             with col_stat1:
@@ -421,6 +351,52 @@ class SectorScreeningComponent:
             if params.get('enable_growth_filter'):
                 growth_passed = sum(1 for r in filtered_results if r.get('growth_analysis', {}).get('is_growth_stock', False))
                 st.metric("成長股比例", f"{growth_passed}/{len(filtered_results)}")
+            
+            # 顯示排除原因統計
+            exclusion_summary = machine.context.get('exclusion_summary', {})
+            if exclusion_summary and exclusion_summary.get('total_excluded', 0) > 0:
+                st.markdown("---")
+                st.markdown("#### 🚫 排除原因分析")
+                
+                # 準備數據
+                reasons_map = {
+                    'potential_return_low': '潛在回報不足',
+                    'intrinsic_value_zero_or_negative': '內在價值異常 (<=0)',
+                    'eps_negative_or_low': 'EPS 過低或虧損',
+                    'growth_filter_failed': '未通過成長股條件',
+                    'missing_data': '數據缺失',
+                    'valuation_error': '估值計算錯誤'
+                }
+                
+                exclusion_data = []
+                for key, label in reasons_map.items():
+                    count = exclusion_summary.get(key, 0)
+                    if count > 0:
+                        exclusion_data.append({"原因": label, "數量": f"{count} 檔"})
+                
+                if exclusion_data:
+                    st.table(pd.DataFrame(exclusion_data))
+                else:
+                    st.info("沒有股票被排除")
+
+            # 顯示詳細排除清單
+            excluded_results = machine.context.get('excluded_results', [])
+            if excluded_results:
+                st.markdown("---")
+                st.markdown("#### 📋 未納入列表詳細清單")
+                df_excluded = pd.DataFrame(excluded_results)
+                # Rename columns for better display
+                df_excluded = df_excluded.rename(columns={
+                    'stock_code': '股票代碼',
+                    'name': '名稱',
+                    'reason': '排除原因',
+                    'category': '類別'
+                })
+                st.dataframe(
+                    df_excluded[['股票代碼', '名稱', '排除原因']], 
+                    use_container_width=True,
+                    hide_index=True
+                )
     
     def _display_no_results_message(self) -> None:
         """顯示無結果訊息"""

@@ -8,12 +8,14 @@ __author__ = "JoJo Trading System"
 
 from .individual_dcf import IndividualDCFComponent
 from .enhanced_individual_dcf_fixed import FixedEnhancedIndividualDCFComponent as EnhancedIndividualDCFComponent
+from .stage4_integration import Stage4IntegrationPanel
 from .sector_screening import SectorScreeningComponent
 from .common_widgets import CommonWidgets
 
 __all__ = [
     'IndividualDCFComponent',
     'EnhancedIndividualDCFComponent',
+    'Stage4IntegrationPanel',
     'SectorScreeningComponent', 
     'CommonWidgets'
 ]

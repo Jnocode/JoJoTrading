@@ -9,6 +9,11 @@ from .trade_recorder import TradeRecorder, TradeEntry, SignalType, TradeType
 from .ai_advisor import AITradingAdvisor, TradingSignal, StockAnalysis
 import random
 
+try:
+    from ..core.auto_data_fetcher import AutoDataFetcher
+except ImportError:
+    AutoDataFetcher = None
+
 
 class SignalGenerator:
     """交易信號生成器"""
@@ -22,6 +27,15 @@ class SignalGenerator:
         self.dcf_sell_threshold = -0.10    # DCF賣出溢價門檻10%
         self.quality_min_threshold = 45    # 最低數據品質要求
         self.confidence_threshold = 60     # 最低信心度要求
+        
+        # 初始化自動數據抓取器
+        try:
+            if AutoDataFetcher:
+                self.auto_fetcher = AutoDataFetcher()
+            else:
+                self.auto_fetcher = None
+        except:
+            self.auto_fetcher = None
         
     def scan_stocks_for_signals(self, stock_list: List[Dict[str, Any]]) -> List[TradingSignal]:
         """掃描股票列表，生成交易信號"""
@@ -149,18 +163,18 @@ class SignalGenerator:
         entry_signals = []
         
         for stock_code in watchlist:
-            # 這裡應該從數據源獲取實時數據
-            # 目前使用模擬數據
-            mock_data = self._get_mock_stock_data(stock_code)
+            # 獲取真實數據
+            stock_data = self._get_real_stock_data(stock_code)
             
-            signal = self._evaluate_single_stock(mock_data)
-            if signal and signal.action == TradeType.BUY:
-                entry_signals.append({
-                    'stock_code': stock_code,
-                    'signal': signal,
-                    'priority': self._calculate_priority(signal),
-                    'suggested_position_size': self._calculate_position_size(signal)
-                })
+            if stock_data:
+                signal = self._evaluate_single_stock(stock_data)
+                if signal and signal.action == TradeType.BUY:
+                    entry_signals.append({
+                        'stock_code': stock_code,
+                        'signal': signal,
+                        'priority': self._calculate_priority(signal),
+                        'suggested_position_size': self._calculate_position_size(signal)
+                    })
         
         return sorted(entry_signals, key=lambda x: x['priority'], reverse=True)
     
@@ -170,24 +184,25 @@ class SignalGenerator:
         open_trades = self.trade_recorder.get_open_trades()
         
         for trade in open_trades:
-            # 獲取當前價格（模擬）
+            # 獲取當前價格 (真實)
             current_price = self._get_current_price(trade.stock_code)
             
-            # 更新未實現損益
-            self.trade_recorder.update_unrealized_pnl(trade.stock_code, current_price)
-            
-            # 檢查是否應該出場
-            exit_reason = self._should_exit_position(trade, current_price)
-            if exit_reason:
-                exit_signals.append({
-                    'trade_id': trade.trade_id,
-                    'stock_code': trade.stock_code,
-                    'current_price': current_price,
-                    'entry_price': trade.entry_price,
-                    'unrealized_pnl': trade.unrealized_pnl,
-                    'exit_reason': exit_reason,
-                    'urgency': self._assess_exit_urgency(trade, current_price)
-                })
+            if current_price > 0:
+                # 更新未實現損益
+                self.trade_recorder.update_unrealized_pnl(trade.stock_code, current_price)
+                
+                # 檢查是否應該出場
+                exit_reason = self._should_exit_position(trade, current_price)
+                if exit_reason:
+                    exit_signals.append({
+                        'trade_id': trade.trade_id,
+                        'stock_code': trade.stock_code,
+                        'current_price': current_price,
+                        'entry_price': trade.entry_price,
+                        'unrealized_pnl': trade.unrealized_pnl,
+                        'exit_reason': exit_reason,
+                        'urgency': self._assess_exit_urgency(trade, current_price)
+                    })
         
         return sorted(exit_signals, key=lambda x: x['urgency'], reverse=True)
     
@@ -209,12 +224,13 @@ class SignalGenerator:
         if holding_days > 90:  # 持倉超過90天
             return "持倉時間過長"
         
-        # DCF重新評估
-        mock_data = self._get_mock_stock_data(trade.stock_code)
-        analysis = self.ai_advisor.analyze_stock(trade.stock_code, mock_data, current_price)
-        
-        if analysis.dcf_discount and analysis.dcf_discount < -0.2:  # 溢價超過20%
-            return "估值過高"
+        # DCF重新評估 (使用真實數據)
+        stock_data = self._get_real_stock_data(trade.stock_code)
+        if stock_data:
+            analysis = self.ai_advisor.analyze_stock(trade.stock_code, stock_data, current_price)
+            
+            if analysis.dcf_discount and analysis.dcf_discount < -0.2:  # 溢價超過20%
+                return "估值過高"
         
         return None
     
@@ -268,26 +284,73 @@ class SignalGenerator:
         return min(0.20, size)  # 最大不超過20%
     
     def _get_current_price(self, stock_code: str) -> float:
-        """獲取當前股價（模擬）"""
-        # 實際應用中應該從數據源獲取
-        base_price = hash(stock_code) % 200 + 50  # 50-250的模擬價格
-        volatility = random.uniform(-0.05, 0.05)  # ±5%波動
-        return base_price * (1 + volatility)
+        """獲取當前股價 (優先使用真實數據)"""
+        if self.auto_fetcher:
+            try:
+                result = self.auto_fetcher.auto_fetch_stock_data(stock_code)
+                if result['success'] and 'current_market_price' in result['data']:
+                    price = result['data']['current_market_price']
+                    if price and price > 0:
+                        return float(price)
+            except:
+                pass
+        return 0.0
     
+    def _get_real_stock_data(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """獲取真實股票數據"""
+        if not self.auto_fetcher:
+            return None
+            
+        try:
+            fetch_result = self.auto_fetcher.get_dcf_ready_data(stock_code)
+            if fetch_result.get('success'):
+                data = fetch_result
+                current_price = data.get('current_market_price', 0)
+                
+                # 補充計算欄位
+                net_income = data.get('net_income_parent', 0)
+                shares = data.get('shares_outstanding', 1)
+                eps = net_income / shares if shares > 0 else 0
+                
+                pe_ratio = current_price / eps if eps > 0 else 0
+                
+                equity = data.get('equity_parent', 0)
+                bps = equity / shares if shares > 0 else 0
+                pb_ratio = current_price / bps if bps > 0 else 0
+                
+                roe = net_income / equity if equity > 0 else 0
+                
+                # 構建分析所需數據結構
+                return {
+                    'stock_code': stock_code,
+                    'stock_name': data.get('company_name', f"{stock_code}公司"),
+                    'current_price': current_price,
+                    'intrinsic_value_per_share': eps * 15 if eps > 0 else 0, # 簡單估值替代
+                    'pe_ratio': pe_ratio,
+                    'pb_ratio': pb_ratio,
+                    'roe': roe,
+                    'debt_ratio': 0.5, # 暫無負債數據
+                    'validation_score': data.get('data_quality_score', 50)
+                }
+        except Exception as e:
+            print(f"獲取真實數據失敗 {stock_code}: {e}")
+            
+        return None
+
     def _get_mock_stock_data(self, stock_code: str) -> Dict[str, Any]:
-        """生成模擬股票數據"""
-        current_price = self._get_current_price(stock_code)
-        
+        """(已棄用) 生成模擬股票數據"""
+        # 保留此方法以防萬一，但不再主動使用
+        current_price = 100.0
         return {
             'stock_code': stock_code,
             'stock_name': f"{stock_code}公司",
             'current_price': current_price,
-            'intrinsic_value_per_share': current_price * random.uniform(0.8, 1.3),
-            'pe_ratio': random.uniform(10, 30),
-            'pb_ratio': random.uniform(0.8, 3.0),
-            'roe': random.uniform(0.05, 0.20),
-            'debt_ratio': random.uniform(0.2, 0.8),
-            'validation_score': random.uniform(40, 90)
+            'intrinsic_value_per_share': current_price * 1.1,
+            'pe_ratio': 15,
+            'pb_ratio': 1.5,
+            'roe': 0.15,
+            'debt_ratio': 0.4,
+            'validation_score': 60
         }
 
 

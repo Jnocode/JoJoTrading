@@ -37,10 +37,12 @@ if src_dir not in sys.path:
 
 # 導入配置管理
 from jojo_trading.config import get_config_manager
+from jojo_trading.core.watchlist_manager import WatchlistManager
 
 # 導入UI組件
 from jojo_trading.ui.components import (
     EnhancedIndividualDCFComponent,
+    Stage4IntegrationPanel,
     SectorScreeningComponent,
     CommonWidgets
 )
@@ -53,11 +55,79 @@ class JoJoTradingApp:
         """初始化應用程式"""
         self.config_manager = get_config_manager()
         self.individual_dcf = EnhancedIndividualDCFComponent()
+        self.stage4_panel = Stage4IntegrationPanel()
         self.sector_screening = SectorScreeningComponent()
         self.common_widgets = CommonWidgets()
+        self.watchlist_manager = WatchlistManager()
         
         # 跳過頁面配置設置（由主應用程式處理）
         # self._setup_page_config()
+        
+    def render_watchlist_sidebar(self) -> None:
+        """渲染自選股側邊欄"""
+        from jojo_trading.core.shioaji_connector import ShioajiConnector
+        
+        with st.sidebar:
+            st.markdown("### 📋 自選股清單 (My Watchlist)")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔄 刷新"):
+                    st.rerun()
+            with col2:
+                if st.button("📥 同步庫存"):
+                    connector = ShioajiConnector()
+                    if connector.is_connected:
+                        with st.spinner("正在從證券帳戶同步庫存..."):
+                            positions = connector.get_positions()
+                            if positions:
+                                stats = self.watchlist_manager.sync_portfolio(positions)
+                                st.success(f"已更新 {stats['updated']} 檔持股")
+                                st.rerun()
+                            else:
+                                st.warning("查無庫存或帳戶")
+                    else:
+                        st.error("Shioaji 未連線")
+                
+            df = self.watchlist_manager.get_all_entries()
+            if not df.empty:
+                # 簡化顯示
+                display_df = df[['stock_code', 'shares_held', 'target_price', 'upside']].copy()
+                display_df['stock_code'] = display_df['stock_code'].astype(str)
+                display_df['upside'] = display_df['upside'].apply(lambda x: f"{x:.1%}")
+                display_df['target_price'] = display_df['target_price'].apply(lambda x: f"${x:.0f}")
+                
+                 # 標記持股
+                display_df['status'] = display_df['shares_held'].apply(lambda x: "🟢 持有" if x > 0 else "")
+                
+                # 使用 st.dataframe 顯示
+                st.dataframe(
+                    display_df, 
+                    column_config={
+                        "stock_code": "代號",
+                        "shares_held": "股數",
+                        "target_price": "目標價",
+                        "upside": "潛在漲幅",
+                        "status": "狀態"
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+                
+                # 刪除功能
+                with st.expander("🗑️ 管理清單"):
+                    to_delete = st.selectbox("選擇要刪除的股票", df['stock_code'].unique(), key="del_select")
+                    if st.button("刪除選定股票"):
+                        # Find ID
+                        record = df[df['stock_code'] == to_delete].iloc[0]
+                        if self.watchlist_manager.delete_entry(int(record['id'])):
+                            st.success(f"已刪除 {to_delete}")
+                            st.rerun()
+            else:
+                st.info("尚未加入任何自選股")
+                st.caption("請在「個股DCF分析」頁面執行估值後點擊保存。")
+            
+            st.markdown("---")
     
     def render_header(self) -> None:
         """渲染頁面標題"""
@@ -79,7 +149,8 @@ class JoJoTradingApp:
     def render_individual_dcf_analysis(self) -> None:
         """渲染個股DCF分析頁面"""
         try:
-            self.individual_dcf.render()
+            # 使用 Stage 4 整合面板
+            self.stage4_panel.render()
         except Exception as e:
             self.common_widgets.render_error_message(
                 error=f"個股DCF分析模組載入失敗: {str(e)}",
@@ -124,6 +195,7 @@ class JoJoTradingApp:
         try:
             # 渲染主要內容
             self.render_header()
+            self.render_watchlist_sidebar() # [NEW]
             self.render_navigation_tabs()
             self.render_debug_info()
             self.render_footer()
@@ -165,6 +237,27 @@ def main():
             import traceback
             st.code(traceback.format_exc())
 
+def run_individual_dcf():
+    """僅運行個股DCF分析頁面"""
+    try:
+        app = JoJoTradingApp()
+        # app.render_header() # 由主程式控制標題
+        app.render_individual_dcf_analysis()
+        app.render_debug_info()
+        app.render_footer()
+    except Exception as e:
+        st.error(f"個股DCF分析頁面運行錯誤: {str(e)}")
+
+def run_sector_screening():
+    """僅運行類股篩選DCF頁面"""
+    try:
+        app = JoJoTradingApp()
+        # app.render_header() # 由主程式控制標題
+        app.render_sector_dcf_screening()
+        app.render_debug_info()
+        app.render_footer()
+    except Exception as e:
+        st.error(f"類股篩選DCF頁面運行錯誤: {str(e)}")
 
 if __name__ == "__main__":
     main()

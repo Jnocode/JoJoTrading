@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from .trade_recorder import TradeRecorder, TradeEntry, SignalType, TradeType
 import statistics
+import pandas as pd
+from ..core.technical_analysis import TechnicalAnalysis
 
 
 @dataclass
@@ -37,13 +39,18 @@ class StockAnalysis:
     roe: Optional[float] = None
     debt_ratio: Optional[float] = None
     
+    # [Phase 4 New] 量化指標
+    piotroski_f_score: int = 0  # 0-9分
+    
     # DCF分析
     dcf_discount: Optional[float] = None  # 折價幅度
     quality_score: Optional[float] = None
     
-    # 技術指標（預留）
+    # 技術指標
     rsi: Optional[float] = None
-    macd_signal: Optional[str] = None
+    macd: Optional[dict] = None
+    ma_trend: str = "Neutral"  # Bullish/Bearish/Neutral
+    technical_indicators: Optional[Dict[str, Any]] = None
     
     # 整體評分
     fundamental_score: float = 50.0  # 基本面評分 (0-100)
@@ -62,7 +69,7 @@ class AITradingAdvisor:
         self.max_debt_ratio = 0.6    # 最大負債比率60%
     
     def analyze_stock(self, stock_code: str, financial_data: Dict[str, Any], 
-                     current_price: float) -> StockAnalysis:
+                     current_price: float, price_history: Optional[pd.Series] = None) -> StockAnalysis:
         """分析單一股票"""
         analysis = StockAnalysis(
             stock_code=stock_code,
@@ -77,6 +84,13 @@ class AITradingAdvisor:
         analysis.roe = financial_data.get('roe')
         analysis.debt_ratio = financial_data.get('debt_ratio')
         analysis.quality_score = financial_data.get('validation_score', 50)
+        
+        # [Phase 4] 計算 Piotroski F-Score
+        analysis.piotroski_f_score = self._calculate_piotroski_score(financial_data)
+        
+        # [Phase 4] 計算技術指標
+        if price_history is not None and not price_history.empty:
+            self._analyze_technical(analysis, price_history)
         
         # 計算DCF折價
         if analysis.dcf_intrinsic_value and analysis.dcf_intrinsic_value > 0:
@@ -139,26 +153,131 @@ class AITradingAdvisor:
             else:
                 score -= 15
         
-        # 數據品質評分 (20分)
+        # 數據品質評分 (10分 - 權重降低)
         if analysis.quality_score is not None:
-            quality_bonus = (analysis.quality_score - 50) / 2.5  # 50分為基準，每2.5分對應1分評分
-            score += max(-10, min(20, quality_bonus))
+            quality_bonus = (analysis.quality_score - 50) / 2.5
+            score += max(-5, min(10, quality_bonus))
+            
+        # [Phase 4] Piotroski F-Score 評分 (30分 - 高權重)
+        # F-Score 7-9 為極優
+        if analysis.piotroski_f_score >= 8:
+            score += 30
+        elif analysis.piotroski_f_score >= 7:
+            score += 25
+        elif analysis.piotroski_f_score >= 5:
+            score += 15
+        elif analysis.piotroski_f_score >= 4:
+            score += 5
+        elif analysis.piotroski_f_score <= 2:
+            score -= 20
         
         return max(0, min(100, score))
     
-    def _calculate_technical_score(self, analysis: StockAnalysis) -> float:
-        """計算技術面評分（目前簡化）"""
-        # 這裡可以後續添加技術指標分析
-        # 目前基於基本面給出簡單技術評分
-        base_score = 50.0
+    def _calculate_piotroski_score(self, data: Dict[str, Any]) -> int:
+        """計算 Piotroski F-Score (0-9分)"""
+        f_score = 0
         
-        # 基於基本面強弱調整技術面評分
-        if analysis.fundamental_score > 70:
-            base_score += 10
-        elif analysis.fundamental_score < 30:
-            base_score -= 10
+        # 1. ROA > 0 (資產報酬率為正)
+        if data.get('roe', 0) > 0: # 暫用 ROE 代替 ROA
+            f_score += 1
             
-        return base_score
+        # 2. CFO > 0 (營業現金流為正)
+        # 如果有 FCF, 通常 CFO 也是正的，這裡用估算
+        # FCF = CFO - Capex => CFO = FCF + Capex
+        fcf = data.get('fcf') or 0
+        capex = data.get('capex') or 0
+        cfo = fcf - capex # Capex 是負數，所以 CFO = FCF - (-Capex) ? 
+        # DataAdapter: standardized["capex"] = yf_data.get("capex") -> Yahoo Capex 是負數
+        # FCF = CFO + Capex  => CFO = FCF - Capex
+        if cfo > 0:
+            f_score += 1
+            
+        # 3. Accrual: CFO > ROA (淨利品質: 營業現金流 > 淨利)
+        net_income = data.get('net_income_parent') or 0
+        if cfo > net_income: # 簡單比較金額，忽略資產規模標準化
+            f_score += 1
+            
+        # 4-6. 槓桿流動性 (需前後期比較，暫時使用靜態指標)
+        debt_ratio = data.get('debt_ratio') or 0.5
+        if debt_ratio < 0.4: # 負債比低
+            f_score += 1
+            
+        current_ratio = data.get('current_ratio') # 假設有此欄位
+        if current_ratio and current_ratio > 1.5:
+            f_score += 1
+            
+        # 7-9. 營運效率 (暫時使用簡單指標)
+        gross_margin = data.get('gross_margin')
+        if gross_margin and gross_margin > 0.2: # 毛利 > 20%
+            f_score += 1
+            
+        # 由於數據限制，部分分數先給基本分
+        # 待未來引入完整歷史數據後完善
+        f_score += 1 # 假設股本未增加
+        
+        return min(9, f_score)
+
+    def _analyze_technical(self, analysis: StockAnalysis, prices: pd.Series):
+        """執行技術分析"""
+        try:
+            ta = TechnicalAnalysis()
+            
+            # RSI
+            analysis.rsi = ta.calculate_rsi(prices)
+            
+            # MACD
+            analysis.macd = ta.calculate_macd(prices)
+            
+            # MA Trend (20MA vs 60MA)
+            ma20 = ta.calculate_ma(prices, 20)
+            ma60 = ta.calculate_ma(prices, 60)
+            
+            if ma20 > ma60:
+                analysis.ma_trend = "Bullish"
+            elif ma20 < ma60:
+                analysis.ma_trend = "Bearish"
+            else:
+                analysis.ma_trend = "Neutral"
+                
+            analysis.technical_indicators = {
+                'rsi': analysis.rsi,
+                'macd': analysis.macd,
+                'ma20': ma20,
+                'ma60': ma60
+            }
+            
+        except Exception as e:
+            print(f"Technical Analysis Error: {e}")
+            analysis.technical_score = 50.0
+
+    def _calculate_technical_score(self, analysis: StockAnalysis) -> float:
+        """計算技術面評分"""
+        score = 50.0
+        
+        # RSI 評分 (30分)
+        if analysis.rsi is not None:
+            if 30 <= analysis.rsi <= 70:
+                score += 10 # 健康區間
+            elif analysis.rsi < 30: # 超賣 -> 反彈機會
+                score += 20
+            elif analysis.rsi > 70: # 超買 -> 回檔風險
+                score -= 20
+        
+        # MACD 評分 (30分)
+        if analysis.macd:
+            hist = analysis.macd.get('hist', 0)
+            if hist > 0: # 多頭動能
+                score += 15
+            else:
+                score -= 15
+                
+        # 趨勢評分 (40分)
+        if analysis.ma_trend == "Bullish":
+            score += 20
+        elif analysis.ma_trend == "Bearish":
+            score -= 20
+            
+        return max(0, min(100, score))
     
     def generate_trading_signal(self, analysis: StockAnalysis) -> Optional[TradingSignal]:
         """生成交易信號"""

@@ -81,11 +81,11 @@ echo ==========================================
 echo [提示] 完整功能導航，包含所有 Phase 5 功能
 echo.
 
-:: 使用完整路徑啟動 Streamlit
-if exist ".venv\Scripts\streamlit.exe" (
-    ".venv\Scripts\streamlit.exe" run streamlit_app.py
+:: 使用完整路徑啟動 Wrapper
+if exist ".venv\Scripts\python.exe" (
+    ".venv\Scripts\python.exe" app.py
 ) else (
-    %PYTHON_EXE% -m streamlit run streamlit_app.py
+    %PYTHON_EXE% app.py
 )
 
 echo.

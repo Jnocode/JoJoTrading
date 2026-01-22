@@ -1,0 +1,42 @@
+=== Shioaji Login Diagnostic Tool ===
+Starting diagnosis...
+API Key: A2Vj...yhvo (Len: 44)
+Secret : EBmY...xHjQ (Len: 44)
+Simulation Mode: False
+Cert Path: C:\ekey\551\A128236527\S\Sinopac.pfx
+Person ID: A128...6527 (Len: 10)
+Cert Pass: Set
+
+Connecting to Shioaji...
+✅ Login SUCCESS!
+
+Activating CA...
+✅ CA Activation SUCCESS!
+
+--- Account Diagnostic ---
+Total Accounts: 3
+
+[Account 0] Type=AccountType.Future | ID=1779433
+  Signed: True
+  Type Value: F
+  ℹ️ Skipping (Not Stock)
+
+[Account 1] Type=AccountType.H | ID=00167831
+  Signed: False
+  Type Value: H
+  Attempting list_positions (Unit=Share)...
+  ❌ Attempting list_positions (Unit=Share)... Failed: {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+  Attempting list_positions (Default)...
+  ❌ Attempting list_positions (Default)... Failed: {'status': {'status_code': 406}, 'response': {'detail': 'Account Not Acceptable.'}}
+  Attempting get_account_balance...
+  ❌ Attempting get_account_balance... Failed: 'Shioaji' object has no attribute 'get_account_balance'
+
+[Account 2] Type=AccountType.Stock | ID=0613610
+  Signed: True
+  Type Value: S
+  Attempting list_positions (Unit=Share)...
+  ✅ Attempting list_positions (Unit=Share)... Success! Count: 1
+  Attempting list_positions (Default)...
+  ✅ Attempting list_positions (Default)... Success! Count: 1
+  Attempting get_account_balance...
+  ❌ Attempting get_account_balance... Failed: 'Shioaji' object has no attribute 'get_account_balance'

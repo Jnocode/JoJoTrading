@@ -21,6 +21,8 @@ pip-delete-this-directory.txt
 # Data files
 all_companies_basic_data.json
 shioaji.log
+*.db
+*.pfx
 
 # IDE / System files
 .vscode/

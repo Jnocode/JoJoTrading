@@ -20,13 +20,7 @@ src_path = project_root / "src"
 if src_path.exists():
     sys.path.insert(0, str(src_path))
 
-# 設置頁面配置
-st.set_page_config(
-    page_title="投資組合管理 - JoJo Trading",
-    page_icon="💼",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# ⚠️ 注意：在多頁面應用中，頁面檔案不應該調用 st.set_page_config()
 
 # 載入自定義CSS
 def load_portfolio_css():

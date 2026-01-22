@@ -12,6 +12,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import sys
 from pathlib import Path
+from FinMind.data import DataLoader
 
 # 添加項目路徑
 current_dir = Path(__file__).parent
@@ -20,13 +21,8 @@ src_path = project_root / "src"
 if src_path.exists():
     sys.path.insert(0, str(src_path))
 
-# 設置頁面配置
-st.set_page_config(
-    page_title="JoJo Trading - 專業投資分析平台",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# ⚠️ 注意：在多頁面應用中,頁面檔案不應該調用 st.set_page_config()
+# 頁面配置應該在主應用檔案（main_app.py）中設定
 
 # 載入自定義CSS樣式
 def load_custom_css():
@@ -189,30 +185,94 @@ def render_system_status():
     else:
         st.warning("⚠️ 無法獲取系統狀態")
 
-def generate_market_overview():
-    """生成市場概覽數據"""
-    # 模擬市場數據
-    dates = pd.date_range(start=datetime.now()-timedelta(days=30), end=datetime.now(), freq='D')
+@st.cache_data(ttl=3600)
+def fetch_market_data(days=60):
+    """
+    從 FinMind 獲取真實市場數據 (TAIEX)
+    """
+    try:
+        dl = DataLoader()
+        start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        
+        # 獲取大盤指數 (TAIEX)
+        df = dl.taiwan_stock_daily(stock_id="TAIEX", start_date=start_date)
+        
+        if df is None or df.empty:
+            raise ValueError("無法獲取 TAIEX 數據")
+            
+        # 整理數據
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.sort_values('date')
+        
+        # 轉換成交量單位 (股 -> 億股)
+        df['volume_100m'] = df['Trading_Volume'] / 100000000
+        
+        # 模擬外資買賣超 (因為 FinMind 免費版可能無法直接獲取大盤法人數據)
+        # 這裡我們用成交量的隨機波動來模擬，或者如果能找到對應 API 更好
+        # 暫時保持模擬，但基於真實成交量調整幅度
+        np.random.seed(42)
+        df['foreign_investment'] = np.random.randn(len(df)) * (df['volume_100m'] * 10) # 簡單模擬
+        
+        return df
+    except Exception as e:
+        st.error(f"獲取市場數據失敗: {e}")
+        # 回退到模擬數據
+        return generate_mock_market_data(days)
+
+def generate_mock_market_data(days=30):
+    """生成模擬市場數據 (Fallback)"""
+    dates = pd.date_range(start=datetime.now()-timedelta(days=days), end=datetime.now(), freq='D')
     
     market_data = pd.DataFrame({
         'date': dates,
-        'taiex': 18000 + np.cumsum(np.random.randn(len(dates)) * 50),
-        'volume': np.random.randint(100, 300, len(dates)),
-        'foreign_investment': np.random.randint(-500, 500, len(dates))
+        'close': 18000 + np.cumsum(np.random.randn(len(dates)) * 150),
+        'volume_100m': np.random.randint(20, 50, len(dates)),
+        'foreign_investment': np.random.randint(-50, 50, len(dates))
     })
-    
     return market_data
 
 def render_market_overview():
     """渲染市場概覽"""
-    st.markdown("### 📈 市場概覽")
+    st.markdown("### 📈 市場概覽 (TAIEX)")
     
-    market_data = generate_market_overview()
+    with st.spinner('正在獲取最新市場數據...'):
+        market_data = fetch_market_data()
     
+    if market_data is None or market_data.empty:
+        st.error("無法載入市場數據")
+        return
+
+    # 取得最新數據
+    latest_data = market_data.iloc[-1]
+    prev_data = market_data.iloc[-2]
+    
+    change = latest_data['close'] - prev_data['close']
+    change_pct = (change / prev_data['close']) * 100
+    
+    # 顯示大盤指數指標
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(
+            "加權指數", 
+            f"{latest_data['close']:.2f}", 
+            f"{change:.2f} ({change_pct:.2f}%)"
+        )
+    with col2:
+        st.metric(
+            "成交量 (億)", 
+            f"{latest_data['volume_100m']:.2f}",
+            f"{(latest_data['volume_100m'] - prev_data['volume_100m']):.2f}"
+        )
+    with col3:
+        st.metric(
+            "資料日期",
+            latest_data['date'].strftime('%Y-%m-%d')
+        )
+
     # 創建子圖
     fig = make_subplots(
         rows=2, cols=2,
-        subplot_titles=('台股指數走勢', '成交量', '外資買賣超', '市場情緒'),
+        subplot_titles=('台股指數走勢', '成交量', '外資買賣超(模擬)', '市場情緒'),
         specs=[[{"secondary_y": False}, {"secondary_y": False}],
                [{"secondary_y": False}, {"type": "indicator"}]]
     )
@@ -221,7 +281,7 @@ def render_market_overview():
     fig.add_trace(
         go.Scatter(
             x=market_data['date'],
-            y=market_data['taiex'],
+            y=market_data['close'],
             mode='lines',
             name='加權指數',
             line=dict(color='#2a5298', width=2)
@@ -233,7 +293,7 @@ def render_market_overview():
     fig.add_trace(
         go.Bar(
             x=market_data['date'],
-            y=market_data['volume'],
+            y=market_data['volume_100m'],
             name='成交量(億)',
             marker_color='#28a745'
         ),
@@ -252,14 +312,22 @@ def render_market_overview():
         row=2, col=1
     )
     
-    # 市場情緒指標
-    sentiment_score = np.random.randint(45, 85)
+    # 市場情緒指標 (這裡還是模擬，因為沒有真實情緒數據源)
+    # 可以根據漲跌幅簡單計算一個情緒分數
+    sentiment_base = 50
+    if change_pct > 1: sentiment_base += 30
+    elif change_pct > 0: sentiment_base += 10
+    elif change_pct < -1: sentiment_base -= 30
+    elif change_pct < 0: sentiment_base -= 10
+    
+    sentiment_score = max(0, min(100, sentiment_base + np.random.randint(-5, 5)))
+    
     fig.add_trace(
         go.Indicator(
             mode="gauge+number+delta",
             value=sentiment_score,
             domain={'x': [0, 1], 'y': [0, 1]},
-            title={'text': "市場情緒"},
+            title={'text': "市場情緒(估計)"},
             delta={'reference': 50},
             gauge={
                 'axis': {'range': [None, 100]},
