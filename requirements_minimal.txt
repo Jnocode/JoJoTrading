@@ -1,3 +1,7 @@
+# Build 工具 (ta 需要編譯)
+setuptools>=65.0.0
+wheel
+
 # 核心框架
 streamlit==1.45.0
 pandas==2.0.3
