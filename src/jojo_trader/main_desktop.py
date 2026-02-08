@@ -5,7 +5,12 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QLabel, QHBoxLayout, QTabWidget)
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load Env Vars (API Keys)
+load_dotenv()
 
 # 添加專案根目錄到 path 以便導入 core 模組
 # 添加專案 src 目錄到 path
@@ -24,7 +29,9 @@ OrdersTab = None
 PositionsTab = None
 BacktestTab = None
 AnalysisTab = None
+AnalysisTab = None
 ScreenerTab = None
+NewsTab = None
 
 try:
     from jojo_trading.core.shioaji_connector import ShioajiConnector
@@ -37,7 +44,9 @@ try:
     from jojo_trader.ui.positions_tab import PositionsTab
     from jojo_trader.ui.backtest_tab import BacktestTab
     from jojo_trader.ui.analysis_tab import AnalysisTab
+    from jojo_trader.ui.analysis_tab import AnalysisTab
     from jojo_trader.ui.screener_tab import ScreenerTab
+    from jojo_trader.ui.news_tab import NewsTab
 
     
 except Exception as e:
@@ -188,11 +197,19 @@ class MainWindow(QMainWindow):
             self.update_status_connected()
             return
 
-        if not BrokerProfileManager: return
+        if not BrokerProfileManager: 
+            print("AutoConnect Aborted: BrokerProfileManager not loaded.")
+            return
         
         try:
             from jojo_trading.core.stock_database import StockDatabase
             db = StockDatabase()
+            
+            # Check System Setting first
+            if db.get_setting("auto_connect", "True") != "True":
+                self.status_label.setText("⚪ Auto-Connect Disabled")
+                return
+
             active_profile_name = db.get_setting("active_profile")
             
             profiles = BrokerProfileManager.get_profiles()
@@ -201,8 +218,17 @@ class MainWindow(QMainWindow):
                 self.status_label.setStyleSheet("color: #ff4d4d;")
                 return
             
+            # Smart Default: If no active profile set, but only 1 profile exists, use it.
+            if not active_profile_name and len(profiles) == 1:
+                active_profile_name = profiles[0]['profile_name']
+                print(f"AutoConnect: Defaulting to single profile '{active_profile_name}'")
+            
+            if not active_profile_name:
+                self.status_label.setText("⚪ Select Profile")
+                return
+
             # Start Worker
-            self.status_label.setText("⏳ Connecting...")
+            self.status_label.setText(f"⏳ Connecting ({active_profile_name})...")
             self.status_label.setStyleSheet("color: #FFD700;") # Gold
             
             self.connect_worker = ConnectWorker(self.connector, profiles, active_profile_name)
@@ -211,6 +237,8 @@ class MainWindow(QMainWindow):
             
         except Exception as e:
             print(f"Auto Connect Start Failed: {e}")
+            import traceback
+            traceback.print_exc()
             self.status_label.setText("🔴 Connect Error")
 
     def on_connect_finished(self, success, name, error_msg):
@@ -266,6 +294,11 @@ class MainWindow(QMainWindow):
         if DashboardTab:
             self.dashboard_tab = DashboardTab(self)
             self.tabs.addTab(self.dashboard_tab, "🏠 總覽 (Home)")
+
+        # --- Tab 0.2: News (NEW) ---
+        if NewsTab:
+            self.news_tab = NewsTab(self)
+            self.tabs.addTab(self.news_tab, "📰 新聞 (News)")
 
         # --- Tab 0.5: Analysis ---
         if AnalysisTab:

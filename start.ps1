@@ -13,13 +13,16 @@ $PYTHON_CMD = "python"
 if (Test-Path ".venv\Scripts\python.exe") {
     $PYTHON_CMD = ".\.venv\Scripts\python.exe"
     Write-Host "✅ 使用虛擬環境: $PYTHON_CMD" -ForegroundColor Green
-} elseif (Get-Command python -ErrorAction SilentlyContinue) {
+}
+elseif (Get-Command python -ErrorAction SilentlyContinue) {
     $PYTHON_CMD = "python"
     Write-Host "✅ 使用系統 Python" -ForegroundColor Green
-} elseif (Get-Command py -ErrorAction SilentlyContinue) {
+}
+elseif (Get-Command py -ErrorAction SilentlyContinue) {
     $PYTHON_CMD = "py"
     Write-Host "✅ 使用 Python Launcher (py)" -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "❌ Python 未安裝或不可用" -ForegroundColor Red
     exit 1
 }
@@ -58,46 +61,50 @@ do {
         "1" {
             Write-Host "🚀 啟動主應用..." -ForegroundColor Green
             Write-Host "這是 JoJo Trading 的主入口，包含完整功能導航" -ForegroundColor Yellow
-            & $PYTHON_CMD -m streamlit run main_app.py
+            & $PYTHON_CMD -m streamlit run web_app/main_app.py
             Read-Host "按 Enter 鍵返回主選單..."
         }
         "2" {
             Write-Host "👤 啟動用戶中心..." -ForegroundColor Green
             Write-Host "用戶註冊、登入、訂閱管理" -ForegroundColor Yellow
-            if (Test-Path "pages/enhanced/00_User_Center.py") {
-                & $PYTHON_CMD -m streamlit run pages/enhanced/00_User_Center.py
-            } else {
-                & $PYTHON_CMD -m streamlit run "pages/enhanced/00_👤_User_Center.py"
+            if (Test-Path "web_app/pages/enhanced/00_User_Center.py") {
+                & $PYTHON_CMD -m streamlit run web_app/pages/enhanced/00_User_Center.py
+            }
+            else {
+                & $PYTHON_CMD -m streamlit run "web_app/pages/enhanced/00_👤_User_Center.py"
             }
             Read-Host "按 Enter 鍵返回主選單..."
         }
         "3" {
             Write-Host "🎯 啟動主導航系統..." -ForegroundColor Green
             Write-Host "智能功能導航與快速入口" -ForegroundColor Yellow
-            if (Test-Path "pages/enhanced/00_Navigation.py") {
-                & $PYTHON_CMD -m streamlit run pages/enhanced/00_Navigation.py
-            } else {
-                & $PYTHON_CMD -m streamlit run "pages/enhanced/00_🎯_Navigation.py"
+            if (Test-Path "web_app/pages/enhanced/00_Navigation.py") {
+                & $PYTHON_CMD -m streamlit run web_app/pages/enhanced/00_Navigation.py
+            }
+            else {
+                & $PYTHON_CMD -m streamlit run "web_app/pages/enhanced/00_🎯_Navigation.py"
             }
             Read-Host "按 Enter 鍵返回主選單..."
         }
         "4" {
             Write-Host "🤖 啟動 AI 股價預測..." -ForegroundColor Green
             Write-Host "LSTM 深度學習股價預測 (需專業版)" -ForegroundColor Yellow
-            if (Test-Path "pages/enhanced/advanced/08_AI_Stock_Predictor.py") {
-                & $PYTHON_CMD -m streamlit run pages/enhanced/advanced/08_AI_Stock_Predictor.py
-            } else {
-                & $PYTHON_CMD -m streamlit run "pages/enhanced/advanced/08_🤖_AI_Stock_Predictor.py"
+            if (Test-Path "web_app/pages/enhanced/advanced/08_AI_Stock_Predictor.py") {
+                & $PYTHON_CMD -m streamlit run web_app/pages/enhanced/advanced/08_AI_Stock_Predictor.py
+            }
+            else {
+                & $PYTHON_CMD -m streamlit run "web_app/pages/enhanced/advanced/08_🤖_AI_Stock_Predictor.py"
             }
             Read-Host "按 Enter 鍵返回主選單..."
         }
         "5" {
             Write-Host "📊 啟動 DCF 估值計算器..." -ForegroundColor Green
             Write-Host "現金流折現估值分析" -ForegroundColor Yellow
-            if (Test-Path "pages/enhanced/02_DCF_Calculator.py") {
-                & $PYTHON_CMD -m streamlit run pages/enhanced/02_DCF_Calculator.py
-            } else {
-                & $PYTHON_CMD -m streamlit run "pages/enhanced/02_📊_DCF_Calculator.py"
+            if (Test-Path "web_app/pages/enhanced/02_DCF_Calculator.py") {
+                & $PYTHON_CMD -m streamlit run web_app/pages/enhanced/02_DCF_Calculator.py
+            }
+            else {
+                & $PYTHON_CMD -m streamlit run "web_app/pages/enhanced/02_📊_DCF_Calculator.py"
             }
             Read-Host "按 Enter 鍵返回主選單..."
         }
@@ -108,7 +115,8 @@ do {
                 Write-Host "✅ Docker 可用，啟動容器..." -ForegroundColor Green
                 docker-compose up -d
                 Write-Host "✅ 容器啟動完成" -ForegroundColor Green
-            } catch {
+            }
+            catch {
                 Write-Host "❌ Docker 未安裝或未啟動" -ForegroundColor Red
                 Write-Host "請先安裝 Docker Desktop" -ForegroundColor Yellow
             }

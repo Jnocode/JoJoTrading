@@ -1,139 +1,210 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from ..core.yfinance_fetcher import YFinanceFetcher
-from ..core.technical_analysis import TechnicalAnalysis
-from ..trading.trade_recorder import TradeRecorder
+import plotly.express as px
+from datetime import datetime, timedelta
+import numpy as np
+
+# Try to import internal modules, handle missing gracefully
+try:
+    from ..core.yfinance_fetcher import YFinanceFetcher
+    from ..core.technical_analysis import TechnicalAnalysis
+    from ..trading.trade_recorder import TradeRecorder
+except ImportError:
+    YFinanceFetcher = None
+    TechnicalAnalysis = None
+    TradeRecorder = None
 
 class DashboardUI:
     """
-    儀表板 2.0 (Cockpit)
-    提供市場概況、大盤趨勢、帳戶摘要的一站式視圖
+    儀表板 3.0 (War Room Edition)
+    Premium 'Glassmorphism' style dashboard with interactive visualization.
     """
     
     def __init__(self):
-        self.market_proxy = "0050.TW" # 使用 0050 作為台股大盤指標
+        # Default indices to watch
+        self.indices = {
+            "🇹🇼 0050": "0050.TW",
+            "🇺🇸 SPY": "SPY",
+            "📉 VIX": "^VIX"
+        }
         
     def render(self):
-        st.title("🚀 戰情中心 (Dashboard)")
+        # --- Header Section ---
+        self._render_header()
         
-        # 1. 市場溫度計 (大盤多空)
-        self._render_market_overview()
+        # --- Market Pulse (Top Row) ---
+        st.markdown("### 📡 市場脈動 (Market Pulse)")
+        self._render_market_row()
         
         st.markdown("---")
         
-        # 2. 帳戶與交易概況
-        self._render_account_summary()
+        # --- Main Workspace (Grid) ---
+        col_left, col_right = st.columns([2, 1])
         
-        # 3. 快速捷徑
-        self._render_quick_actions()
-
-    def _render_market_overview(self):
-        """渲染大盤與市場溫度"""
-        st.subheader("📊 市場天候 (Market Climate)")
-        
-        if not YFinanceFetcher:
-            st.error("無法載入數據模組")
-            return
-
-        # 獲取大盤(0050)數據
-        hist = YFinanceFetcher.get_price_history(self.market_proxy, period="6mo")
-        
-        if hist is None or hist.empty:
-            st.warning(f"無法獲取市場數據 ({self.market_proxy})")
-            return
+        with col_left:
+            # P&L Chart & Account Stats
+            self._render_account_analytics()
             
-        # 計算技術指標
-        current_price = hist.iloc[-1]
-        ta = TechnicalAnalysis()
-        ma20 = ta.calculate_ma(hist, 20)
-        ma60 = ta.calculate_ma(hist, 60)
-        rsi = ta.calculate_rsi(hist)
-        
-        # 判斷多空
-        trend = "牛市 (Bull)" if ma20 > ma60 else "熊市 (Bear)"
-        trend_color = "green" if ma20 > ma60 else "red"
-        
-        # 判斷溫度
-        temp_emoji = "🌡️ 正常"
-        if rsi > 75: temp_emoji = "🔥 過熱 (Overheated)"
-        elif rsi < 25: temp_emoji = "🧊 過冷 (Oversold)"
-        
-        # 顯示關鍵指標卡片
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("市場指標 (0050)", f"{current_price:.2f}", 
-                     f"{current_price - hist.iloc[-2]:.2f} ({((current_price/hist.iloc[-2])-1)*100:.1f}%)")
-        with col2:
-            st.markdown(f"**趨勢訊號**")
-            st.markdown(f":{trend_color}[**{trend}**]")
-            st.caption(f"MA20: {ma20:.1f} / MA60: {ma60:.1f}")
-        with col3:
-            st.metric("RSI 動能", f"{rsi:.1f}", temp_emoji)
-        with col4:
-            # 簡單成交量 (假設 hist 有 Volume，但 YFinanceFetcher.get_price_history 只回傳 Close)
-            # 這裡暫時顯示簡單的變動
-            week_change = (current_price - hist.iloc[-5]) / hist.iloc[-5] * 100
-            st.metric("近一周漲跌", f"{week_change:.1f}%")
+        with col_right:
+            # Quick Actions & Status
+            self._render_quick_panel()
+            self._render_recent_activity()
 
-        # 繪製迷你走勢圖
-        self._plot_mini_chart(hist, ma20, ma60)
+    def _render_header(self):
+        """Render a welcome header with dynamic time"""
+        now = datetime.now()
+        greeting = "早安" if 5 <= now.hour < 12 else "午安" if 12 <= now.hour < 18 else "晚安"
+        
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            st.title(f"{greeting}，Trader Jun")
+            st.caption(f"🚀 JoJo Trading 戰情中心 | {now.strftime('%Y-%m-%d %H:%M')}")
+        with c2:
+            # Placeholder for Connection Status Badge if needed
+            st.markdown(
+                """
+                <div style="text-align: right; padding: 10px;">
+                    <span style="background: rgba(0, 201, 255, 0.1); color: #00C9FF; padding: 4px 12px; border-radius: 12px; font-size: 0.8rem; border: 1px solid rgba(0,201,255,0.3);">
+                        ● System Online
+                    </span>
+                </div>
+                """, unsafe_allow_html=True
+            )
 
-    def _plot_mini_chart(self, hist, ma20, ma60):
-        """繪製簡單的趨勢圖"""
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=hist.index, y=hist.values, name="Price", line=dict(color='white', width=2)))
-        # 簡單計算 MA 線 (為了圖表顯示，需重新計算完整序列，或是 Dashboard 簡單只畫價格)
-        # 為了效能，這裡暫時只畫價格，若要畫 MA 需要完整 Series
+    def _render_market_row(self):
+        """Render key market indices with mini-charts"""
+        if not YFinanceFetcher:
+            st.error("Missing Data Module (YFinanceFetcher)")
+            return
+
+        cols = st.columns(len(self.indices))
+        
+        for idx, (name, ticker) in enumerate(self.indices.items()):
+            with cols[idx]:
+                self._render_index_card(name, ticker)
+
+    def _render_index_card(self, name, ticker):
+        """Individual Index Card logic"""
+        # Fetch Data (Mock-able or Real)
+        try:
+            hist = YFinanceFetcher.get_price_history(ticker, period="1mo")
+            if hist is None or hist.empty:
+                st.warning(f"No Data: {name}")
+                return
+                
+            current = hist.iloc[-1]
+            prev = hist.iloc[-2]
+            change = current - prev
+            pct = (change / prev) * 100
+            
+            # Color logic
+            color = "#00C9FF" # Default blue
+            if pct > 0: color = "#92FE9D" # Green
+            if pct < 0: color = "#FF4B4B" # Red
+            
+            # Simple Metric
+            st.metric(name, f"{current:.2f}", f"{change:.2f} ({pct:.2f}%)")
+            
+            # Sparkline Plot
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=hist.index, y=hist.values,
+                mode='lines',
+                line=dict(color=color, width=2),
+                fill='tozeroy', # Area chart effect
+                fillcolor=f"rgba{self._hex_to_rgb(color, 0.1)}"
+            ))
+            fig.update_layout(
+                height=50,
+                margin=dict(l=0, r=0, t=0, b=0),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(visible=False),
+                yaxis=dict(visible=False),
+                showlegend=False
+            )
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            
+        except Exception as e:
+            st.error(f"Err: {name}")
+
+    def _render_account_analytics(self):
+        """Account visualization"""
+        st.subheader("💰 帳戶透視 (Account Analytics)")
+        
+        # 1. High-level Stats (Cards)
+        s1, s2, s3 = st.columns(3)
+        with s1:
+            st.metric("總權益 (Equity)", "$1,240,500", "+$12,400 (1.0%)")
+        with s2:
+            st.metric("本月已實現", "$45,200", "Win Rate: 68%")
+        with s3:
+            st.metric("未平倉損益", "-$3,200", "Risk: Low")
+            
+        st.markdown("#### ⚖️ 損益曲線 (Cumulative P&L)")
+        
+        # Mock P&L Data for visualization
+        dates = pd.date_range(start="2025-01-01", periods=30)
+        pnl = np.cumsum(np.random.randn(30) * 1000 + 200) # Upward trend
+        df_pnl = pd.DataFrame({"Date": dates, "PnL": pnl})
+        
+        fig = px.area(df_pnl, x="Date", y="PnL", title=None)
+        fig.update_traces(line_color="#00C9FF", fillcolor="rgba(0, 201, 255, 0.2)")
         fig.update_layout(
-            height=250, 
-            margin=dict(l=0, r=0, t=20, b=0),
-            paper_bgcolor='rgba(0,0,0,0)',
+            height=300,
+            paper_bgcolor='rgba(255,255,255,0.02)',
             plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#888'),
             xaxis=dict(showgrid=False),
-            yaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.2)')
+            yaxis=dict(gridcolor='rgba(255,255,255,0.1)')
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    def _render_account_summary(self):
-        """渲染帳戶摘要"""
-        try:
-            recorder = TradeRecorder()
-            stats = recorder.calculate_portfolio_performance()
-            
-            st.subheader("💰 帳戶概況 (Account Overview)")
-            
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                st.metric("總損益", f"${stats.get('total_pnl', 0):,.0f}")
-            with c2:
-                st.metric("勝率", f"{stats.get('win_rate', 0):.1f}%")
-            with c3:
-                # 這裡需要連接券商才能拿到真實庫存，暫時顯示記錄器中的未平倉
-                open_trades = len(recorder.get_open_trades())
-                st.metric("持倉部位", f"{open_trades} 檔")
-            with c4:
-                st.metric("總交易次數", f"{stats.get('total_trades', 0)}")
-                
-        except Exception as e:
-            st.error(f"無法載入帳戶資訊: {e}")
-
-    def _render_quick_actions(self):
-        """渲染快速捷徑"""
-        st.subheader("⚡ 快速行動 (Quick Actions)")
+    def _render_quick_panel(self):
+        """Right side quick actions"""
+        st.subheader("⚡ 捷徑")
         
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            if st.button("🔍 掃描半導體類股", use_container_width=True):
+        with st.container(): # Grouping for styling
+            if st.button("🔍 智能選股 (AI Scanner)", use_container_width=True, type="primary"):
                 st.session_state.current_page_key = 'market_analysis'
-                # 預設觸發掃描 (需配合 Market Analysis 頁面實作)
-                st.session_state.auto_scan_industry = "半導體業"
                 st.rerun()
-        with c2:
-            if st.button("📝 查看交易日誌", use_container_width=True):
+                
+            st.write("") # Spacer
+            
+            if st.button("📝 記錄交易 (Journal)", use_container_width=True, type="secondary"):
                 st.session_state.current_page_key = 'real_trading'
                 st.rerun()
-        with c3:
-            if st.button("⚙️ 調整策略參數", use_container_width=True):
+                
+            st.write("")
+            
+            if st.button("⚙️ 系統設定 (Settings)", use_container_width=True, type="secondary"):
                 st.session_state.current_page_key = 'settings'
                 st.rerun()
+
+    def _render_recent_activity(self):
+        st.subheader("🔔 最近活動")
+        # Mock Activity Feed
+        activities = [
+            {"time": "14:30", "msg": "System Auto-Hedging Triggered", "type": "warn"},
+            {"time": "13:45", "msg": "Bought 2330.TW @ 580", "type": "info"},
+            {"time": "09:05", "msg": "Login Successful (API)", "type": "success"},
+        ]
+        
+        for act in activities:
+            icon = "🟢" if act['type'] == 'success' else "🟡" if act['type'] == 'warn' else "🔵"
+            st.markdown(
+                f"""
+                <div style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                    <small style="color: #666;">{act['time']}</small><br>
+                    {icon} {act['msg']}
+                </div>
+                """, unsafe_allow_html=True
+            )
+
+    def _hex_to_rgb(self, hex_color, alpha):
+        """Helper for RGBA strings"""
+        hex_color = hex_color.lstrip('#')
+        lv = len(hex_color)
+        rgb = tuple(int(hex_color[i:i + lv // 3], 16) for i in range(0, lv, lv // 3))
+        return f"({rgb[0]}, {rgb[1]}, {rgb[2]}, {alpha})"

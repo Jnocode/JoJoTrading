@@ -1,0 +1,161 @@
+/* JoJo Trading Premium Design System (Glassmorphism & Backdrop Blur) */
+
+/* Import Google Fonts (Inter & Roboto Mono) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Roboto+Mono:wght@400;700&display=swap');
+
+/* Global Font Settings */
+html,
+body,
+[class*="css"] {
+    font-family: 'Inter', sans-serif;
+    color: #E0E0E0;
+    /* Light Gray Text */
+}
+
+/* Background - Deep Dark Gradient */
+.stApp {
+    background: radial-gradient(circle at 10% 20%, rgb(18, 18, 22) 0%, rgb(10, 10, 12) 90%);
+}
+
+/* Headers */
+h1,
+h2,
+h3 {
+    font-weight: 800 !important;
+    background: -webkit-linear-gradient(45deg, #00C9FF, #92FE9D);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+}
+
+h4,
+h5,
+h6 {
+    color: #A0A0A0 !important;
+    font-weight: 600 !important;
+}
+
+/* --- Glassmorphism Card Style --- */
+div[data-testid="stMetric"],
+div.stDataFrame,
+div[data-testid="stExpander"],
+div.css-1r6slb0 {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 16px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+div[data-testid="stMetric"]:hover,
+div[data-testid="stExpander"]:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.2);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* --- Metrics --- */
+[data-testid="stMetricLabel"] {
+    font-size: 0.9rem !important;
+    color: #888888 !important;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+[data-testid="stMetricValue"] {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 1.8rem !important;
+    font-weight: 700 !important;
+    color: #FFFFFF !important;
+}
+
+[data-testid="stMetricDelta"] {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 0.9rem !important;
+}
+
+/* --- Sidebar --- */
+section[data-testid="stSidebar"] {
+    background-color: rgb(15, 15, 18) !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+section[data-testid="stSidebar"] h1 {
+    -webkit-text-fill-color: #FFFFFF;
+    /* Reset gradient for sidebar title if needed or keep it */
+    font-size: 1.5rem !important;
+}
+
+/* --- Buttons --- */
+/* Primary Button (Gradient) */
+div.stButton>button[kind="primary"] {
+    background: linear-gradient(90deg, #00C9FF 0%, #92FE9D 100%);
+    color: #000000;
+    border: none;
+    border-radius: 8px;
+    font-weight: 700;
+    transition: all 0.3s ease;
+}
+
+div.stButton>button[kind="primary"]:hover {
+    box-shadow: 0 0 15px rgba(0, 201, 255, 0.5);
+    transform: scale(1.02);
+}
+
+/* Secondary Button (Outline) */
+div.stButton>button[kind="secondary"] {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #E0E0E0;
+    border-radius: 8px;
+}
+
+div.stButton>button[kind="secondary"]:hover {
+    border-color: #00C9FF;
+    color: #00C9FF;
+}
+
+/* --- Inputs --- */
+input[type="text"],
+input[type="password"],
+textarea,
+div[data-baseweb="select"]>div {
+    background-color: rgba(0, 0, 0, 0.3) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    color: white !important;
+    border-radius: 6px !important;
+}
+
+/* --- Tabs --- */
+button[data-baseweb="tab"] {
+    background-color: transparent !important;
+    color: #888888 !important;
+    font-weight: 600;
+}
+
+button[data-baseweb="tab"][aria-selected="true"] {
+    color: #00C9FF !important;
+    border-bottom: 2px solid #00C9FF !important;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #0f0f12;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #333;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}

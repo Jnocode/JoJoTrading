@@ -1,0 +1,46 @@
+{
+  "health_score": 80,
+  "status": "良好",
+  "emoji": "🟡",
+  "issues": [
+    "API 成功率過低: 75.0%"
+  ],
+  "uptime": "0:00:18",
+  "api_stats": {
+    "total_requests": 4,
+    "successful_requests": 3,
+    "failed_requests": 1,
+    "success_rate": 75.0,
+    "total_retries": 0,
+    "avg_retries_per_request": 0,
+    "retry_triggered_rate": 0.0,
+    "response_time": {
+      "min": 1.824591875076294,
+      "max": 6.210702419281006,
+      "avg": 3.751925230026245,
+      "median": 3.4862033128738403,
+      "p95": 6.210702419281006
+    },
+    "status_codes": {
+      "200": 3,
+      "500": 1
+    },
+    "error_types": {
+      "HTTPError": 1
+    },
+    "time_range": {
+      "start": "2025-11-19 15:17:10.469474",
+      "end": "2025-11-19 15:17:24.347923"
+    }
+  },
+  "cache_stats": {
+    "total_operations": 7,
+    "cache_hits": 4,
+    "cache_misses": 1,
+    "cache_writes": 1,
+    "stale_cache": 1,
+    "hit_rate": 66.66666666666666,
+    "miss_rate": 16.666666666666664,
+    "effective_hit_rate": 83.33333333333334
+  }
+}

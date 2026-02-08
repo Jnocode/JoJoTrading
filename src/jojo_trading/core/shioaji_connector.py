@@ -1,6 +1,11 @@
 import os
-import shioaji as sj
-from shioaji import Exchange
+try:
+    import shioaji as sj
+    from shioaji import Exchange
+except ImportError:
+    sj = None
+    Exchange = None
+
 import pandas as pd
 from typing import Dict, Optional, Any, List
 from dotenv import load_dotenv
@@ -38,6 +43,10 @@ class ShioajiConnector:
         Connect to Shioaji API using provided credentials or fallback to env vars
         allowed_ip: Optional white-listed IP to enforce verification
         """
+        if sj is None:
+            print("❌ Shioaji module not installed. Mocking connection for UI testing.")
+            return {"status": "error", "msg": "Module 'shioaji' not found"}
+
         if self.is_connected:
             print("⚠️ Already Connected")
             return {"status": "success", "msg": "Already Connected"}

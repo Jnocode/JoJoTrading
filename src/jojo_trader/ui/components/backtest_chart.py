@@ -1,6 +1,14 @@
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QComboBox, QHBoxLayout, QLabel
-from PySide6.QtWebEngineWidgets import QWebEngineView
+
+# Safe Import for WebEngine
+try:
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+    WEB_ENGINE_AVAILABLE = True
+except ImportError:
+    WEB_ENGINE_AVAILABLE = False
+    print("⚠️ QtWebEngineWidgets not available. Charts will be disabled.")
+    
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
@@ -24,8 +32,15 @@ class BacktestChart(QWidget):
         
         self.layout.addLayout(self.toolbar)
         
-        self.web_view = QWebEngineView()
-        self.layout.addWidget(self.web_view)
+        if WEB_ENGINE_AVAILABLE:
+            self.web_view = QWebEngineView()
+            self.layout.addWidget(self.web_view)
+        else:
+            self.web_view = None
+            lbl = QLabel("❌ Charts Not Available (WebEngine Missing)")
+            lbl.setStyleSheet("color: red; font-size: 16px; font-weight: bold; padding: 20px;")
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter if hasattr(Qt, 'AlignmentFlag') else Qt.AlignCenter)
+            self.layout.addWidget(lbl)
         
         self.raw_df = None
         self.trades = []
@@ -154,4 +169,8 @@ class BacktestChart(QWidget):
 
         # Save to temp HTML and Load
         raw_html = fig.to_html(include_plotlyjs='cdn')
-        self.web_view.setHtml(raw_html)
+        
+        if self.web_view:
+             self.web_view.setHtml(raw_html)
+        else:
+             print("Skipping Chart Render: WebEngine not available")

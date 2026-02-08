@@ -1,4 +1,0 @@
-
---- CALL ---
-Input: close > MA20 close < MA20
-MA Matches: []

@@ -34,43 +34,30 @@ from ..utils.logger import logger
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 try:
-    # 導入 data_handler 模組 (函數式而非類別式)
-    from src.jojo_trading.core import data_handler
-    # from src.jojo_trading.core.state_machine import DataFetchState, JoJoStateMachine # Removed to avoid circular import
-    from src.jojo_trading.core.financial_quality_checker import FinancialDataQualityChecker
-    from src.jojo_trading.core.yfinance_fetcher import YFinanceFetcher
-    from jojo_trading.core.quality_checker import FinancialQualityChecker
+    # Standard Imports assuming 'src' is in PYTHONPATH
+    from jojo_trading.core import data_handler
+    from jojo_trading.core.financial_quality_checker import FinancialDataQualityChecker
+    from jojo_trading.core.yfinance_fetcher import YFinanceFetcher
     from jojo_trading.core.data_adapter import DataAdapter
     from jojo_trading.core.shioaji_connector import ShioajiConnector
     print("✅ 成功導入所有必要模組")
 except ImportError as e:
-    print(f"⚠️ 模組導入警告: {e}")
-    # 嘗試替代導入路徑
+    print(f"⚠️ 模組導入警告 (Standard): {e}")
+    # Fallback for relative imports if run directly
     try:
-        import sys
-        import os
-        current_dir = os.path.dirname(__file__)
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-        sys.path.append(project_root)
         from . import data_handler
-        # from .state_machine import DataFetchState, JoJoStateMachine # Removed to avoid circular import
         from .financial_quality_checker import FinancialDataQualityChecker
         from .yfinance_fetcher import YFinanceFetcher
         from .data_adapter import DataAdapter
-        try:
-            from .shioaji_connector import ShioajiConnector
-        except ImportError:
-            ShioajiConnector = None
-        print("✅ 使用替代路徑成功導入模組")
-    except ImportError:
+        from .shioaji_connector import ShioajiConnector
+        print("✅ 使用相對路徑成功導入模組")
+    except ImportError as e2:
+        print(f"❌ 無法導入必要模組: {e2}")
         data_handler = None
-        # DataFetchState = None
-        # JoJoStateMachine = None
         FinancialDataQualityChecker = None
         YFinanceFetcher = None
         DataAdapter = None
         ShioajiConnector = None
-        print("❌ 無法導入必要模組，將使用備用方案")
 
 class AutoDataFetcher:
     """
@@ -87,12 +74,9 @@ class AutoDataFetcher:
         self.sj_connector = ShioajiConnector() if ShioajiConnector else None
         
         # 初始化財務品質檢測器
+        # 初始化財務品質檢測器
         try:
             self.quality_checker = FinancialDataQualityChecker() if FinancialDataQualityChecker else None
-            # Fallback to the other class if imported
-            if not self.quality_checker and 'FinancialQualityChecker' in globals() and FinancialQualityChecker:
-                 self.quality_checker = FinancialQualityChecker()
-                 
             if self.quality_checker:
                 print("✅ 財務品質檢測器初始化成功")
         except Exception as e:
