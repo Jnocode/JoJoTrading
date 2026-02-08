@@ -98,3 +98,8 @@ industries.json
 jojo_state_machine.py
 data_handler.py
 data_fetching.py
+
+# Build output
+dist/
+build/
+*.spec
