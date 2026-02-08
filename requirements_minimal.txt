@@ -1,27 +1,20 @@
-# Build 工具 (ta 需要編譯)
-setuptools>=65.0.0
-wheel
-
-# 核心框架
-streamlit==1.45.0
-pandas==2.0.3
-numpy==1.24.4
-
-# 技術分析
-ta==0.5.25
+# 核心框架 - 使用寬鬆版本避免編譯問題
+streamlit>=1.30.0
+pandas>=2.0.0
+numpy>=1.26.0
 
 # 數據源
-yfinance==0.2.33
-requests==2.31.0
+yfinance>=0.2.30
+requests>=2.31.0
 
 # 圖表
-plotly==5.18.0
-matplotlib==3.7.5
+plotly>=5.18.0
 
 # 工具
-python-dotenv==1.0.0
-python-dateutil==2.8.2
+python-dotenv>=1.0.0
+python-dateutil>=2.8.0
 
 # 資料處理
-openpyxl==3.1.2
-beautifulsoup4==4.12.3
+openpyxl>=3.1.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
