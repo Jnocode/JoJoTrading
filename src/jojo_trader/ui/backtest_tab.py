@@ -7,18 +7,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QTabWidget, QGridLayout, QDateEdit, QComboBox
 )
 from PySide6.QtCore import Qt, QThread, Signal, Slot, QDate
-from jojo_trading.analysis.backtest.engine import BacktestEngine
-from jojo_trader.ui.components.backtest_chart import BacktestChart
-import datetime
-import pandas as pd
-import json
-
-try:
-    from jojo_trading.core.watchlist_manager import WatchlistManager
-    from jojo_trading.core.stock_database import StockDatabase
-except ImportError:
-    WatchlistManager = None
-    StockDatabase = None
+from jojo_trading.core.backtest_controller import BacktestController
 
 class BacktestResultWindow(QWidget):
     def __init__(self):
@@ -97,7 +86,7 @@ class BacktestResultWindow(QWidget):
             border-radius: 8px;
             padding: 10px;
         """)
-        result_layout.addWidget(QLabel("📊 回測結果 (Results)"))
+        result_layout.addWidget(QLabel("📊 回測結果與 AI 診斷 (Results & AI Doctor)"))
         result_layout.addWidget(self.result_area)
         
         splitter.addWidget(result_container)
@@ -115,9 +104,9 @@ class BacktestResultWindow(QWidget):
         
         splitter.addWidget(chart_container)
         
-        # Set splitter sizes (30% Left, 70% Right)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 7)
+        # Set splitter sizes (35% Left, 65% Right)
+        splitter.setStretchFactor(0, 35)
+        splitter.setStretchFactor(1, 65)
         
         layout.addWidget(splitter)
 
@@ -147,20 +136,27 @@ class BacktestResultWindow(QWidget):
         self.lbl_win.setText(f"{result['win_rate']:.2f}%")
         self.lbl_trades.setText(f"共 {result['total_trades']} 筆交易")
 
-        # 3. Update Text Report
-        report = f"✅ 詳細交易紀錄\n"
+        # 3. Update Text Report (including AI Diagnosis)
+        report = "👨‍⚕️ 策略健檢報告 (AI Strategy Doctor)\n"
+        report += f"{'='*40}\n"
+        if 'ai_diagnosis' in result:
+            report += f"{result['ai_diagnosis']}\n\n"
+        else:
+            report += "⚠️ AI 診斷未能生成。\n\n"
+            
+        report += "✅ 詳細交易紀錄\n"
         report += f"{'-'*40}\n"
-        
         report += "最近 5 筆交易 (Last 5 Trades):\n"
+        
         for t in result['trades'][-5:]:
             action = t['type'].upper()
             date = t['date'].strftime('%Y-%m-%d')
             price = t['price']
             qty = t['qty']
-            pnl = f", 損益: {t['pnl']:,.0f}" if 'pnl' in t else ""
+            pnl_val = f", 損益: {t['pnl']:,.0f}" if 'pnl' in t else ""
             color = "🟢" if action == "BUY" else "🔴"
             cmd_chn = "買入" if action == "BUY" else "賣出"
-            report += f"{color} [{date}] {cmd_chn} {qty}股 @ {price}{pnl}\n"
+            report += f"{color} [{date}] {cmd_chn} {qty}股 @ {price}{pnl_val}\n"
             
         self.result_area.setText(report)
         
@@ -182,17 +178,18 @@ class BacktestWorker(QThread):
         self.start_date = start_date
         self.end_date = end_date
         self.interval = interval
+        self.controller = BacktestController()
         
     def run(self):
         try:
             self.progress.emit(0)
-            engine = BacktestEngine(initial_capital=self.initial_capital)
             
-            # Run with callback
-            result = engine.run(
+            # 使用包含 AI 的新 Controller 執行回測進程
+            result = self.controller.run_backtest_with_diagnosis(
                 self.stock_code, 
                 self.buy_strat, 
                 self.sell_strat, 
+                initial_capital=self.initial_capital,
                 start_date=self.start_date,
                 end_date=self.end_date,
                 interval=self.interval,
@@ -321,6 +318,7 @@ class BacktestTab(QWidget):
         toolbar_layout.addWidget(self.btn_export)
         toolbar_layout.addWidget(self.btn_monitor)
         
+        toolbar_frame.setMinimumSize(1, 1)
         main_layout.addWidget(toolbar_frame)
         
         # =================================================
@@ -377,6 +375,34 @@ class BacktestTab(QWidget):
         
         grid_tech.addWidget(self.chk_tech_bull, 1, 0); grid_tech.addWidget(self.chk_tech_bear, 1, 1)
         grid_tech.addWidget(self.chk_tech_gold, 2, 0); grid_tech.addWidget(self.chk_tech_dead, 2, 1)
+        
+        # New KD
+        self.chk_tech_kd_gold = QCheckBox("KD 黃金交叉 (K>D)")
+        self.chk_tech_kd_dead = QCheckBox("KD 死亡交叉 (K<D)")
+
+        # New MACD
+        self.chk_tech_macd_bull = QCheckBox("MACD 黃金交叉")
+        self.chk_tech_macd_bear = QCheckBox("MACD 死亡交叉")
+        
+        # New Bollinger Bands
+        self.chk_tech_bb_break = QCheckBox("布林通道突破 (上緣)")
+        self.chk_tech_bb_break_bear = QCheckBox("布林通道跌破 (下緣)")
+        
+        grid_tech.addWidget(self.chk_tech_kd_gold, 9, 0);    grid_tech.addWidget(self.chk_tech_kd_dead, 9, 1)
+        grid_tech.addWidget(self.chk_tech_macd_bull, 10, 0); grid_tech.addWidget(self.chk_tech_macd_bear, 10, 1)
+        grid_tech.addWidget(self.chk_tech_bb_break, 11, 0);  grid_tech.addWidget(self.chk_tech_bb_break_bear, 11, 1)
+        
+        # New OpenClaw SuperTrend + SMC
+        self.chk_tech_supertrend = QCheckBox("SuperTrend AI (Bull)")
+        self.chk_tech_smc_break = QCheckBox("SMC 結構突破 (Bull)")
+        self.chk_tech_risk_radar = QCheckBox("🛡️ 風險雷達過濾 (Risk<6)")
+        
+        self.chk_tech_supertrend_bear = QCheckBox("SuperTrend AI (Bear)")
+        self.chk_tech_smc_break_bear = QCheckBox("SMC 結構跌破 (Bear)")
+        
+        grid_tech.addWidget(self.chk_tech_supertrend, 12, 0); grid_tech.addWidget(self.chk_tech_supertrend_bear, 12, 1)
+        grid_tech.addWidget(self.chk_tech_smc_break, 13, 0); grid_tech.addWidget(self.chk_tech_smc_break_bear, 13, 1)
+        grid_tech.addWidget(self.chk_tech_risk_radar, 14, 0, 1, 2)
         grid_tech.addWidget(self.chk_tech_rsi, 3, 0);  grid_tech.addWidget(self.chk_tech_rsi_weak, 3, 1)
         
         # --- Chips Tab ---
@@ -514,14 +540,25 @@ class BacktestTab(QWidget):
         
         status_layout.addWidget(self.status_label)
         status_layout.addStretch()
-        status_layout.addWidget(self.progress_bar)
-        
-        main_layout.addWidget(status_frame)
-
         # Mapping (Re-mapped to new checkboxes)
         self.wizard_map = {
             self.chk_tech_bull: "close > MA20", self.chk_tech_gold: "MA5 > MA20", self.chk_tech_rsi: "RSI14 > 50",
             self.chk_tech_bear: "close < MA20", self.chk_tech_dead: "MA5 < MA20", self.chk_tech_rsi_weak: "RSI14 < 50",
+            # OpenClaw Recommended
+            self.chk_tech_kd_gold: "K > D",
+            self.chk_tech_kd_dead: "K < D",
+            self.chk_tech_macd_bull: "MACD_OSC > 0",
+            self.chk_tech_macd_bear: "MACD_OSC < 0",
+            
+            # SuperTrend AI + SMC
+            self.chk_tech_supertrend: "SuperTrend_Trend == 1",
+            self.chk_tech_supertrend_bear: "SuperTrend_Trend == -1",
+            self.chk_tech_smc_break: "close > SMC_SwingHigh",
+            self.chk_tech_smc_break_bear: "close < SMC_SwingLow",
+            self.chk_tech_risk_radar: "Risk_Allowed == True",
+            
+            self.chk_tech_bb_break: "close > BB_Upper",
+            self.chk_tech_bb_break_bear: "close < BB_Lower",
             self.chk_chip_foreign: "Foreign_Buy > 1000", self.chk_chip_trust: "IT_Buy > 0", self.chk_chip_dealer: "Dealer_Buy > 500",
             self.chk_chip_foreign_sell: "Foreign_Buy < -1000", self.chk_chip_trust_sell: "IT_Buy < 0", self.chk_chip_dealer_sell: "Dealer_Buy < -500",
             self.chk_fund_revenue: "Revenue_YOY > 15", self.chk_fund_eps: "EPS > 0",

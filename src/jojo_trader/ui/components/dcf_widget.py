@@ -66,7 +66,8 @@ class DCFWidget(QWidget):
         
         # Inputs
         self.spin_price = self.create_input(p_layout, "Price (股價):", 0, 0, 10000, 1)
-        self.spin_net_income = self.create_input(p_layout, "Net Income (億):", 0, 2, 10000, 0.1)
+        # Allow negative net income (for loss-making companies)
+        self.spin_net_income = self.create_input(p_layout, "Net Income (億):", 0, 2, 10000, 0.1, min_val=-10000)
         self.spin_shares = self.create_input(p_layout, "Shares (億股):", 1, 0, 500, 0.1)
         
         # Assumptions
@@ -112,13 +113,13 @@ class DCFWidget(QWidget):
         layout.addWidget(res_group)
         layout.addStretch()
         
-    def create_input(self, layout, label_text, row, col, max_val, step, default=0.0):
+    def create_input(self, layout, label_text, row, col, max_val, step, default=0.0, min_val=0.0):
         lbl = QLabel(label_text)
         lbl.setStyleSheet("color: #AAA;")
         layout.addWidget(lbl, row, col)
         
         spin = QDoubleSpinBox()
-        spin.setRange(0, max_val)
+        spin.setRange(min_val, max_val)
         spin.setSingleStep(step)
         spin.setValue(default)
         spin.setStyleSheet("background-color: #111; color: white; border: 1px solid #555;")
@@ -167,6 +168,20 @@ class DCFWidget(QWidget):
         self.lbl_value.setText(f"Intrinsic Value: ${val:,.2f}")
         
         upside_pct = ret * 100 if ret else 0
-        color = "#66bb6a" if upside_pct > 0 else "#ef5350"
-        self.lbl_upside.setText(f"Upside: {upside_pct:+.2f}%")
-        self.lbl_upside.setStyleSheet(f"color: {color}; font-size: 14px; font-weight: bold;")
+        
+        # Clear recommendation with Chinese labels
+        if upside_pct > 20:
+            recommendation = "🟢 嚴重低估 - 強力買入"
+            color = "#4CAF50"
+        elif upside_pct > 0:
+            recommendation = "🟡 低估 - 可考慮買入"
+            color = "#8BC34A"
+        elif upside_pct > -20:
+            recommendation = "🟠 合理估值 - 持有觀望"
+            color = "#FF9800"
+        else:
+            recommendation = "🔴 嚴重高估 - 建議賣出"
+            color = "#F44336"
+        
+        self.lbl_upside.setText(f"潛在報酬: {upside_pct:+.2f}% | {recommendation}")
+        self.lbl_upside.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: bold;")

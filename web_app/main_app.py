@@ -204,6 +204,8 @@ def get_news_ui():
         from jojo_trading.ui.news_dashboard import NewsDashboardUI
         return NewsDashboardUI()
     except Exception as e:
+        import streamlit as st
+        st.error(f"新聞模組載入錯誤: {e}")
         return None
 
 # -----------------------------------------------------------------------------

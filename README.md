@@ -9,9 +9,9 @@
 
 **完整的量化交易生態系統**，包含數據抓取、DCF 估值、策略回測、風險分析等模組。
 
-🔗 **線上 Demo**: [jojo-trading.onrender.com](https://jojo-trading.onrender.com) (Demo 帳號: `demo` / 密碼: `demo123`)  
-🎥 **Demo 影片**: [YouTube](https://youtu.be/xxxxx) (2 分鐘完整展示)  
-📊 **專案規模**: 35,000+ lines | 350+ commits | 40+ tests | 12 months
+🔗 **線上 Demo**: [jojotrading-1.onrender.com](https://jojotrading-1.onrender.com)  
+🎥 **Demo 影片**: (即將上傳 YouTube)  
+📊 **專案規模**: 35,000+ lines | 350+ commits | 40+ tests | 24 months
 
 ---
 
@@ -32,13 +32,11 @@
 | 指標 | 數據 |
 |-----|------|
 | **程式碼規模** | 35,000+ lines |
-| **開發時間** | 12 個月（2024/01 - 2025/12） |
+| **開發時間** | 24 個月（2024/01 - 2025/12） |
 | **Git 提交** | 350+ commits |
-| **測試數量** | 40+ unit tests, 15+ integration tests |
-| **API 成功率** | 75% (含重試機制) |
-| **快取命中率** | 66.7% |
+| **測試數量** | 40+ unit tests |
 | **系統穩定性** | 99.9% uptime |
-| **效能提升** | 60% (異步數據抓取) |
+| **效能提升** | 60% (異異步數據抓取) |
 
 ---
 
@@ -131,38 +129,44 @@ graph LR
 ### ⚡ 方法 1：一鍵啟動（推薦）
 
 #### Windows
+
 ```cmd
-start.bat
+RUN_WEB_APP.bat
 ```
 
 #### Linux / macOS
+
 ```bash
 chmod +x start.sh
 ./start.sh
 ```
 
-瀏覽器會自動開啟 **http://localhost:8501**
+瀏覽器會自動開啟 **<http://localhost:8501>**
 
 ---
 
 ### 🐳 方法 2：Docker 部署（生產環境）
 
 #### 1. 建立 Docker Image
+
 ```bash
 docker build -t jojo-trading .
 ```
 
 #### 2. 啟動容器
+
 ```bash
 docker-compose up -d
 ```
 
 #### 3. 訪問應用
+
 ```
 http://localhost:8501
 ```
 
 #### 4. 停止容器
+
 ```bash
 docker-compose down
 ```
@@ -172,27 +176,33 @@ docker-compose down
 ### 🔧 方法 3：手動安裝（開發環境）
 
 #### 1. 建立虛擬環境
+
 ```bash
 python -m venv .venv
 ```
 
 #### 2. 啟動虛擬環境
+
 **Windows:**
+
 ```cmd
 .venv\Scripts\activate
 ```
 
 **Linux / macOS:**
+
 ```bash
 source .venv/bin/activate
 ```
 
 #### 3. 安裝依賴
+
 ```bash
 pip install -r requirements.txt
 ```
 
 #### 4. 啟動應用
+
 ```bash
 streamlit run src/jojo_trading/ui/app.py
 ```
@@ -259,12 +269,14 @@ jojo_trading/
 ### 1️⃣ DCF 估值引擎 (`core/dcf_engine.py`)
 
 **功能**：
+
 - 折現現金流（DCF）模型計算
 - CAPM 動態折現率
 - 敏感度分析
 - 情景分析（樂觀/基準/悲觀）
 
 **技術亮點**：
+
 ```python
 # 異步數據抓取
 async def fetch_financial_data(stock_id: str) -> dict:
@@ -279,6 +291,7 @@ async def fetch_financial_data(stock_id: str) -> dict:
 ```
 
 **量化成果**：
+
 - ⏱️ 數據抓取時間減少 **60%**（相比同步方式）
 - ✅ API 成功率 **75%**（含重試機制）
 - 🎯 估值準確率：與市場價格相關係數 **0.78**
@@ -288,12 +301,14 @@ async def fetch_financial_data(stock_id: str) -> dict:
 ### 2️⃣ 回測引擎 (`core/backtest_engine.py`)
 
 **功能**：
+
 - Pine Script 風格策略語法
 - 技術指標庫（SMA、EMA、RSI、MACD、Bollinger Bands）
 - 策略績效分析（夏普比率、最大回撤）
 - 視覺化回測結果
 
 **技術亮點**：
+
 ```python
 # 策略回測框架
 class BacktestEngine:
@@ -309,6 +324,7 @@ class BacktestEngine:
 ```
 
 **支援指標**：
+
 - 趨勢：SMA、EMA、MACD
 - 震盪：RSI、Stochastic
 - 波動：Bollinger Bands、ATR
@@ -318,12 +334,14 @@ class BacktestEngine:
 ### 3️⃣ 風險分析模組 (`analysis/risk_analysis.py`)
 
 **功能**：
+
 - VaR（Value at Risk）計算
 - Monte Carlo 模擬（10,000+ 次迭代）
 - 標準差與 Beta 係數
 - 風險收益比分析
 
 **技術亮點**：
+
 ```python
 # Monte Carlo 模擬
 def monte_carlo_simulation(
@@ -341,6 +359,7 @@ def monte_carlo_simulation(
 ```
 
 **量化成果**：
+
 - 🎲 模擬速度：10,000 次迭代 < 3 秒
 - 📊 預測準確度：95% 信賴區間覆蓋率 **93%**
 
@@ -349,12 +368,14 @@ def monte_carlo_simulation(
 ### 4️⃣ 數據抓取器 (`core/data_fetcher.py`)
 
 **功能**：
+
 - 異步 API 整合（Shioaji、Yahoo Finance）
 - 指數退避重試機制（Exponential Backoff）
 - 智能快取系統
 - 錯誤處理與日誌記錄
 
 **技術亮點**：
+
 ```python
 # 指數退避重試
 async def fetch_with_retry(
@@ -375,6 +396,7 @@ async def fetch_with_retry(
 ```
 
 **快取策略**：
+
 - 📦 SQLite 持久化快取
 - ⚡ 記憶體快取（LRU）
 - 🔄 快取命中率：**66.7%**
@@ -384,11 +406,13 @@ async def fetch_with_retry(
 ## 🧪 測試
 
 ### 執行所有測試
+
 ```bash
 pytest
 ```
 
 ### 執行特定測試
+
 ```bash
 # 單元測試
 pytest tests/unit/
@@ -401,11 +425,13 @@ pytest tests/performance/
 ```
 
 ### 測試覆蓋率
+
 ```bash
 pytest --cov=src/jojo_trading --cov-report=html
 ```
 
 **測試成果**：
+
 - 📊 測試覆蓋率：**75%**
 - ✅ 單元測試：40+ 檔案
 - ✅ 整合測試：15+ 檔案
@@ -416,6 +442,7 @@ pytest --cov=src/jojo_trading --cov-report=html
 ## 🛠️ 技術棧
 
 ### 核心技術
+
 - **語言**: Python 3.11+
 - **異步框架**: AsyncIO, aiohttp
 - **Web 框架**: Streamlit (UI), FastAPI (API)
@@ -424,11 +451,13 @@ pytest --cov=src/jojo_trading --cov-report=html
 - **測試**: Pytest, Unittest
 
 ### 數據與儲存
+
 - **數據庫**: SQLite
 - **快取**: 記憶體快取 (LRU)
 - **API**: Shioaji, Yahoo Finance, yfinance
 
 ### DevOps
+
 - **容器化**: Docker, Docker Compose
 - **CI/CD**: GitHub Actions
 - **版本控制**: Git, GitHub
@@ -439,26 +468,34 @@ pytest --cov=src/jojo_trading --cov-report=html
 ## 📊 功能展示
 
 ### 🏠 系統總覽
+
 ![系統總覽](docs/screenshots/dashboard.png)
+
 - 即時市場概況
 - 快速導航
 - 系統健康監控
 
 ### 💰 DCF 估值分析
+
 ![DCF 估值](docs/screenshots/dcf.png)
+
 - 完整財務數據展示
 - 自動計算內在價值
 - 敏感度分析圖表
 - Monte Carlo 模擬視覺化
 
 ### 📈 策略回測
+
 ![策略回測](docs/screenshots/backtest.png)
+
 - 技術指標策略測試
 - 績效指標統計
 - 資產曲線圖表
 
 ### 🎲 Monte Carlo 模擬
+
 ![Monte Carlo](docs/screenshots/monte_carlo.png)
+
 - 10,000+ 次價格路徑模擬
 - 95% 信賴區間
 - 風險收益分析
@@ -468,6 +505,7 @@ pytest --cov=src/jojo_trading --cov-report=html
 ## 🚧 開發指南
 
 ### 開發環境設定
+
 ```bash
 # 1. Clone repository
 git clone https://github.com/xiujiang1987/jojo-trading.git
@@ -486,6 +524,7 @@ pre-commit install
 ```
 
 ### Commit 規範
+
 ```
 feat: 新功能
 fix: 修復 bug
@@ -497,6 +536,7 @@ chore: 雜項（依賴更新等）
 ```
 
 ### 分支策略
+
 - `main`: 穩定版本
 - `develop`: 開發分支
 - `feature/*`: 功能開發
@@ -507,12 +547,14 @@ chore: 雜項（依賴更新等）
 ## 📈 效能優化
 
 ### 已實現的優化
+
 - ✅ **AsyncIO 異步架構**：數據抓取效率提升 60%
 - ✅ **智能快取系統**：快取命中率 66.7%
 - ✅ **指數退避重試**：API 成功率 75%
 - ✅ **數據庫索引優化**：查詢速度提升 40%
 
 ### 未來優化計畫
+
 - [ ] Redis 分散式快取
 - [ ] Celery 任務佇列
 - [ ] PostgreSQL 替代 SQLite
@@ -523,11 +565,13 @@ chore: 雜項（依賴更新等）
 ## 🐛 已知問題與限制
 
 ### 當前限制
+
 - **API 限流**：Yahoo Finance 有頻率限制（60 次/小時）
 - **數據延遲**：非即時數據，延遲約 15-20 分鐘
 - **單執行緒**：SQLite 不支援多執行緒寫入
 
 ### 解決方案
+
 - 使用快取機制減少 API 調用
 - 實作指數退避重試機制
 - 計畫遷移至 PostgreSQL
@@ -544,15 +588,16 @@ chore: 雜項（依賴更新等）
 
 **姜鈞 (Jun Chiang)**
 
-- 📧 Email: jun0926865945@outlook.com
+- 📧 Email: <jun0926865945@outlook.com>
 - 🔗 GitHub: [@xiujiang1987](https://github.com/xiujiang1987)
-- 💼 LinkedIn: [準備建立中]
+- 💼 LinkedIn: (建立中)
 
 ---
 
 ## 🙏 致謝
 
 感謝以下開源專案：
+
 - [Streamlit](https://streamlit.io) - 快速建立數據應用
 - [Pandas](https://pandas.pydata.org) - 數據分析基礎
 - [yfinance](https://github.com/ranaroussi/yfinance) - Yahoo Finance API
@@ -563,6 +608,7 @@ chore: 雜項（依賴更新等）
 ## 📌 更新日誌
 
 ### v2.0.0 (2025-12-31)
+
 - ✨ 重構核心架構，採用模組化設計
 - ✨ 新增 Monte Carlo 模擬功能
 - ✨ 實作完整測試套件（75% 覆蓋率）
@@ -570,6 +616,7 @@ chore: 雜項（依賴更新等）
 - ✨ CI/CD Pipeline 自動化
 
 ### v1.0.0 (2024-06-30)
+
 - 🎉 首次發佈
 - ✨ DCF 估值引擎
 - ✨ 策略回測系統
@@ -581,7 +628,7 @@ chore: 雜項（依賴更新等）
 
 有任何問題或建議，歡迎透過以下方式聯絡：
 
-- 📧 **Email**: jun0926865945@outlook.com
+- 📧 **Email**: <jun0926865945@outlook.com>
 - 🐛 **Issue**: [GitHub Issues](https://github.com/xiujiang1987/jojo-trading/issues)
 - 💬 **討論**: [GitHub Discussions](https://github.com/xiujiang1987/jojo-trading/discussions)
 

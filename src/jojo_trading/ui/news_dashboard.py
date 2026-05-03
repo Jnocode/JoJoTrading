@@ -5,7 +5,7 @@ import time
 import os
 from datetime import datetime
 from dotenv import set_key, load_dotenv
-from jojo_trading.data_sources.jin10 import Jin10Scraper
+from jojo_trading.data_sources.jin10_mcp import Jin10MCPClient
 from jojo_trading.data_sources.stock_price import StockPriceFetcher
 from jojo_trading.strategies.supertrend_smc import SuperTrendSMCStrategy
 from jojo_trading.analysis.news_ai import NewsAnalyzer
@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 
 class NewsDashboardUI:
     def __init__(self):
-        self.scraper = Jin10Scraper()
+        self.client = Jin10MCPClient()
         self.analyzer = NewsAnalyzer()
         self.price_fetcher = StockPriceFetcher()
 
@@ -49,7 +49,7 @@ class NewsDashboardUI:
 
         # Fetch Data
         with st.spinner("獲取最新快訊中 (Groq Llama-3 極速分析中)..."):
-            news_items = self.scraper.fetch_latest_news(limit=10)
+            news_items = self.client.fetch_latest_news(limit=10)
             
             # Run AI Analysis (Batch)
             analyzed_news_raw = self.analyzer.analyze_impact_batch(news_items)

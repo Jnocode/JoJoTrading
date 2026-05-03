@@ -91,3 +91,32 @@ class NewsCacheManager:
             
         except Exception as e:
             logger.error(f"Cache SAVE error: {e}")
+
+    def clear_all(self) -> int:
+        """Delete all cached analysis records. Returns number of rows deleted."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM analyzed_news")
+            count = cursor.fetchone()[0]
+            cursor.execute("DELETE FROM analyzed_news")
+            conn.commit()
+            conn.close()
+            logger.info(f"Cleared {count} cached news analyses.")
+            return count
+        except Exception as e:
+            logger.error(f"Cache CLEAR error: {e}")
+            return 0
+
+    def get_count(self) -> int:
+        """Return number of cached analysis records."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM analyzed_news")
+            count = cursor.fetchone()[0]
+            conn.close()
+            return count
+        except Exception as e:
+            logger.error(f"Cache COUNT error: {e}")
+            return 0

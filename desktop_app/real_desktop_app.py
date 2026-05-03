@@ -37,6 +37,7 @@ AnalysisTab = None
 AnalysisTab = None
 ScreenerTab = None
 NewsTab = None
+GeneralSettingsTab = None
 
 try:
     from jojo_trading.core.shioaji_connector import ShioajiConnector
@@ -52,8 +53,8 @@ try:
     from jojo_trader.ui.analysis_tab import AnalysisTab
     from jojo_trader.ui.screener_tab import ScreenerTab
     from jojo_trader.ui.news_tab import NewsTab
+    from jojo_trader.ui.settings_tab import GeneralSettingsTab
 
-    
 except Exception as e:
     # Critical Debug: Show error in windowed mode
     app = QApplication.instance() or QApplication(sys.argv)
@@ -128,8 +129,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("JoJo Trader - Command Center")
         self.resize(450, 650)
         
-        # 設定 Always on Top (讓它浮在最上層)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        
+        # 移除 Always on Top（讓用戶自由切換視窗）
+        # 原本: self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         
         # 主樣式
         self.setStyleSheet("""
@@ -337,7 +339,10 @@ class MainWindow(QMainWindow):
             self.backtest_tab = BacktestTab(self)
             self.tabs.addTab(self.backtest_tab, "🧪 回測 (Backtest)")
 
-
+        # --- Tab 5: Settings ---
+        if GeneralSettingsTab:
+            self.settings_tab = GeneralSettingsTab(self)
+            self.tabs.addTab(self.settings_tab, "⚙️ 設定 (Settings)")
 
     def switch_to_orders_tab(self):
         """Helper to switch to orders tab (index 2)"""

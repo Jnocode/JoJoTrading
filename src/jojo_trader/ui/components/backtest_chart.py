@@ -33,13 +33,19 @@ class BacktestChart(QWidget):
         self.layout.addLayout(self.toolbar)
         
         if WEB_ENGINE_AVAILABLE:
-            self.web_view = QWebEngineView()
-            self.layout.addWidget(self.web_view)
+            try:
+                self.web_view = QWebEngineView()
+                self.layout.addWidget(self.web_view)
+            except Exception as e:
+                print(f"⚠️ WebEngineView initialization failed: {e}")
+                self.web_view = None
+                lbl = QLabel("❌ Charts Not Available (WebEngine Error)")
+                lbl.setStyleSheet("color: orange; font-size: 16px; font-weight: bold; padding: 20px;")
+                self.layout.addWidget(lbl)
         else:
             self.web_view = None
             lbl = QLabel("❌ Charts Not Available (WebEngine Missing)")
             lbl.setStyleSheet("color: red; font-size: 16px; font-weight: bold; padding: 20px;")
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter if hasattr(Qt, 'AlignmentFlag') else Qt.AlignCenter)
             self.layout.addWidget(lbl)
         
         self.raw_df = None

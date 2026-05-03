@@ -2,9 +2,9 @@
 import sys
 import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QLabel, QHBoxLayout, QTabWidget)
+                             QLabel, QHBoxLayout, QTabWidget, QScrollArea, QDockWidget)
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QScreen
 from PySide6.QtGui import QFont
 from datetime import datetime
 from dotenv import load_dotenv
@@ -116,15 +116,31 @@ class ConnectWorker(QThread):
             self.finished.emit(False, "Error", str(e))
 
 
+class ResponsiveTabWidget(QTabWidget):
+    def minimumSizeHint(self):
+        from PySide6.QtCore import QSize
+        return QSize(10, 10) # 允許無限縮小，無視子元件建議大小
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
         self.setWindowTitle("JoJo Trader - Command Center")
-        self.resize(450, 650)
+        self.setMinimumSize(1, 1)
         
-        # 設定 Always on Top (讓它浮在最上層)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        # 根據螢幕大小自適應初始尺寸 (85% 螢幕寬高)
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geo = screen.availableGeometry()
+            w = int(screen_geo.width() * 0.85)
+            h = int(screen_geo.height() * 0.85)
+            self.resize(w, h)
+            # 置中顯示
+            x = screen_geo.x() + (screen_geo.width() - w) // 2
+            y = screen_geo.y() + (screen_geo.height() - h) // 2
+            self.move(x, y)
+        else:
+            self.resize(1280, 800)
         
         # 主樣式
         self.setStyleSheet("""
@@ -184,8 +200,20 @@ class MainWindow(QMainWindow):
         
         # 初始化 Connector
         self.connector = None
+        self.bridge = None 
+        
+        # Init Bridge (Global)
+        try:
+            from jojo_trader.ui.signal_bridge import ShioajiSignalBridge
+            self.bridge = ShioajiSignalBridge()
+        except ImportError:
+            print("⚠️ Signal Bridge Import Failed")
+
         if ShioajiConnector:
             self.connector = ShioajiConnector()
+            if self.bridge:
+                self.connector.set_bridge(self.bridge)
+            
             QTimer.singleShot(1000, self.auto_connect) # 延遲 1 秒自動連線
 
     def auto_connect(self):
@@ -266,8 +294,10 @@ class MainWindow(QMainWindow):
 
     def setup_ui(self):
         central_widget = QWidget()
+        central_widget.setMinimumSize(1, 1)
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
+        layout.setSizeConstraint(QVBoxLayout.SetNoConstraint)
         
         # 標題列
         header_layout = QHBoxLayout()
@@ -275,63 +305,165 @@ class MainWindow(QMainWindow):
         title.setFont(QFont("Segoe UI", 16, QFont.Bold))
         header_layout.addWidget(title)
         
+        # 加入 Pop Out 按鈕到標題列
+        from PySide6.QtWidgets import QPushButton
+        from PySide6.QtGui import QCursor
+        self.btn_pop_out = QPushButton("↗ 獨立視窗 (Pop Out)")
+        self.btn_pop_out.setStyleSheet("""
+            QPushButton {
+                background-color: transparent; 
+                color: #2196F3; 
+                font-weight: bold; 
+                border: 1px solid #2196F3;
+                border-radius: 4px;
+                padding: 4px 12px;
+                margin-left: 10px;
+            }
+            QPushButton:hover {
+                background-color: #2196F3;
+                color: white;
+            }
+        """)
+        self.btn_pop_out.setCursor(QCursor(Qt.PointingHandCursor))
+        self.btn_pop_out.clicked.connect(self.pop_out_current_tab)
+        header_layout.addWidget(self.btn_pop_out)
+        
+        # Spacer to push status label to the right
+        header_layout.addStretch()
+        
         self.status_label = QLabel("⚪ Connecting...")
         self.status_label.setStyleSheet("color: #aaaaaa;")
         header_layout.addWidget(self.status_label, alignment=Qt.AlignRight)
         
         layout.addLayout(header_layout)
         
-        # 使用 Tab Widget 分頁
-        self.tabs = QTabWidget()
+        # 使用 Tab Widget 分頁 (可捲動，窄視窗自適應)
+        self.tabs = ResponsiveTabWidget()
+        self.tabs.setMinimumSize(1, 1)
+        self.tabs.setTabBarAutoHide(False)
+        self.tabs.tabBar().setExpanding(False)
+        self.tabs.setElideMode(Qt.ElideRight)
+        self.tabs.setUsesScrollButtons(True)
         self.tabs.setStyleSheet("""
             QTabWidget::pane { border: 1px solid #3d3d3d; top: -1px; }
             QTabBar::tab { background: #2d2d2d; color: #aaa; padding: 8px 12px; border-top-left-radius: 4px; border-top-right-radius: 4px; }
             QTabBar::tab:selected { background: #3d3d3d; color: white; border-bottom: 2px solid #2196F3; }
         """) # Slight style tweak for better look
+        
         layout.addWidget(self.tabs)
         
+        # Helper for wrapping tabs in scroll area to allow extreme shrinking
+        def wrap_in_scroll(widget, order_id):
+            scroll = QScrollArea()
+            scroll.setMinimumSize(1, 1)
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(widget)
+            scroll.setFrameShape(QScrollArea.NoFrame)
+            scroll._original_order = order_id
+            return scroll
+            
         # --- Tab 0: Dashboard (Home) ---
         if DashboardTab:
             self.dashboard_tab = DashboardTab(self)
-            self.tabs.addTab(self.dashboard_tab, "🏠 總覽 (Home)")
+            self.tabs.addTab(wrap_in_scroll(self.dashboard_tab, 0), "🏠 總覽 (Home)")
 
         # --- Tab 0.2: News (NEW) ---
         if NewsTab:
             self.news_tab = NewsTab(self)
-            self.tabs.addTab(self.news_tab, "📰 新聞 (News)")
+            self.tabs.addTab(wrap_in_scroll(self.news_tab, 1), "📰 新聞 (News)")
 
         # --- Tab 0.5: Analysis ---
         if AnalysisTab:
             self.analysis_tab = AnalysisTab(self)
-            self.tabs.addTab(self.analysis_tab, "📊 分析 (Analysis)")
+            self.tabs.addTab(wrap_in_scroll(self.analysis_tab, 2), "📊 分析 (Analysis)")
 
         # --- Tab 1: Watchlist ---
         if WatchlistTab:
             self.watchlist_tab = WatchlistTab(self)
-            self.tabs.addTab(self.watchlist_tab, "👀 監控 (Watch)")
+            self.tabs.addTab(wrap_in_scroll(self.watchlist_tab, 3), "👀 監控 (Watch)")
         else:
-            self.tabs.addTab(QLabel("Modules Missing"), "Error")
+            err_lbl = QLabel("Modules Missing")
+            err_lbl._original_order = 3
+            self.tabs.addTab(err_lbl, "Error")
 
         # --- Tab 1.5: Screener ---
         if ScreenerTab:
             self.screener_tab = ScreenerTab(self)
-            self.tabs.addTab(self.screener_tab, "🔍 掃描 (Screener)")
+            self.tabs.addTab(wrap_in_scroll(self.screener_tab, 4), "🔍 掃描 (Screener)")
 
         # --- Tab 2: Orders ---
         if OrdersTab:
             self.orders_tab = OrdersTab(self)
-            self.tabs.addTab(self.orders_tab, "📝 委託 (Orders)")
+            self.tabs.addTab(wrap_in_scroll(self.orders_tab, 5), "📝 委託 (Orders)")
 
         # --- Tab 3: Positions ---
         if PositionsTab:
             self.positions_tab = PositionsTab(self)
-            self.tabs.addTab(self.positions_tab, "🎒 庫存 (Positions)")
+            self.tabs.addTab(wrap_in_scroll(self.positions_tab, 6), "🎒 庫存 (Positions)")
 
         # --- Tab 4: Backtest ---
         if BacktestTab:
             self.backtest_tab = BacktestTab(self)
-            self.tabs.addTab(self.backtest_tab, "🧪 回測 (Backtest)")
+            self.tabs.addTab(wrap_in_scroll(self.backtest_tab, 7), "🧪 回測 (Backtest)")
 
+    def pop_out_current_tab(self):
+        idx = self.tabs.currentIndex()
+        if idx < 0: return
+        widget = self.tabs.widget(idx)
+        title = self.tabs.tabText(idx)
+        
+        # Don't pop out if it's the only tab left
+        if self.tabs.count() <= 1:
+            return
+            
+        self.tabs.removeTab(idx)
+        
+        # Ensure widget is visible after removing from tab widget
+        widget.show()
+        
+        from PySide6.QtWidgets import QMainWindow
+        from PySide6.QtCore import Qt
+        
+        # Create detached window
+        detached = QMainWindow(self)
+        detached.setWindowTitle(f"{title} - 獨立視窗")
+        detached.setCentralWidget(widget)
+        detached.resize(800, 600)
+        # Don't delete on close so we can put it back
+        detached.setAttribute(Qt.WA_DeleteOnClose, False)
+        
+        # Keep a Python reference so it doesn't get garbage collected
+        if not hasattr(self, 'detached_windows'):
+            self.detached_windows = []
+        self.detached_windows.append(detached)
+        
+        # Handle close event to put it back
+        def closeEvent(event):
+            # Find the correct index based on _original_order
+            insert_idx = 0
+            if hasattr(widget, '_original_order'):
+                for i in range(self.tabs.count()):
+                    w = self.tabs.widget(i)
+                    if hasattr(w, '_original_order') and w._original_order > widget._original_order:
+                        break
+                    insert_idx += 1
+            else:
+                insert_idx = self.tabs.count()
+                
+            # Put it back to tabs
+            self.tabs.insertTab(insert_idx, widget, title)
+            # Re-select it
+            self.tabs.setCurrentWidget(widget)
+            
+            if detached in self.detached_windows:
+                self.detached_windows.remove(detached)
+                
+            event.accept()
+            # Defer deletion
+            detached.deleteLater()
+            
+        detached.closeEvent = closeEvent
+        detached.show()
 
 
     def switch_to_orders_tab(self):

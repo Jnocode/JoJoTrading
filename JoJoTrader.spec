@@ -1,6 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
 from PyInstaller.utils.hooks import collect_all
+
+# 動態取得 .spec 檔所在目錄 (不再硬編碼路徑)
+SPEC_DIR = os.path.dirname(os.path.abspath(SPEC))
 
 # Collect all resources for problematic libraries to avoid missing dependencies
 datas = []
@@ -16,7 +20,7 @@ for lib in ['shioaji', 'nacl', 'filelock', 'pyrsca', 'base58']:
 
 a = Analysis(
     ['src/jojo_trader/main_desktop.py'],
-    pathex=['d:/Workspace/dev_projects/trading/jojo_trading/src'],
+    pathex=[os.path.join(SPEC_DIR, 'src')],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

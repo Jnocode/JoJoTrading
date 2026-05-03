@@ -1,164 +1,189 @@
 
 import sys
 import os
+import logging
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timedelta
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QScrollArea, QFrame, QPushButton, QSplitter, 
-    QProgressBar, QGridLayout, QMessageBox, QSizePolicy
+    QProgressBar, QGridLayout, QMessageBox, QSizePolicy, QComboBox
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QColor, QFont, QCursor
+from PySide6.QtGui import QDesktopServices, QColor, QFont, QCursor, QPainter, QLinearGradient
 
-from jojo_trading.data_sources.jin10 import Jin10Scraper
-from jojo_trading.analysis.news_ai import NewsAnalyzer
-try:
-    import yfinance as yf
-except ImportError:
-    yf = None
+from jojo_trading.core.news_controller import NewsController
+from jojo_trading.core.stock_database import StockDatabase
 
-class PriceFetcher:
-    @staticmethod
-    def get_price_snapshot(ticker):
-        """Fetch simplified price data for a single ticker"""
-        if not yf: return None
-        try:
-            # Add suffix for TW stocks if needed (AI usually returns 2330.TW)
-            # If AI returns just '2330', we might need to guess. 
-            # But the current prompt asks for '2330.TW'.
-            
-            stock = yf.Ticker(ticker)
-            # Get fast info
-            info = stock.fast_info
-            price = info.last_price
-            prev_close = info.previous_close
-            
-            if price and prev_close:
-                change_pct = ((price - prev_close) / prev_close) * 100
-                return {
-                    "price": price,
-                    "change_pct": change_pct
-                }
-        except Exception as e:
-            print(f"Price Fetch Fail ({ticker}): {e}")
-        return None
+logger = logging.getLogger(__name__)
 
-    @staticmethod
-    def enrich_news_items(items):
-        """Process a list of news items and add price data to affected_stocks"""
-        if not yf: return items
+def get_sentiment_color(score):
+    if score <= 20: return "#388E3C"
+    elif score <= 40: return "#66BB6A"
+    elif score <= 60: return "#9E9E9E"
+    elif score <= 80: return "#F57C00"
+    else: return "#D32F2F"
+
+class SentimentRatioBar(QWidget):
+    """A simple horizontal bar showing the ratio of Bullish vs Bearish news"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(24)
+        self._bull_pct = 50
         
-        # Collect all unique tickers to potentially batch (yfinance simple batching?)
-        # For now, do simple loop as volume is low (5 items * 2-3 stocks)
+    def set_ratio(self, bull_count, bear_count):
+        total = bull_count + bear_count
+        if total == 0:
+            self._bull_pct = 50
+        else:
+            self._bull_pct = int((bull_count / total) * 100)
+        self.update()
         
-        for item in items:
-            analysis = item.get('analysis', {})
-            affected = analysis.get('affected_stocks', [])
-            for stock in affected:
-                ticker = stock.get('ticker')
-                if ticker:
-                    data = PriceFetcher.get_price_snapshot(ticker)
-                    if data:
-                        stock['price_data'] = data
-        return items
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        radius = 4
+        
+        # Base background (Bearish / Green)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#388E3C"))
+        painter.drawRoundedRect(0, 0, w, h, radius, radius)
+        
+        # Bullish overlay (Red)
+        if self._bull_pct > 0:
+            bull_w = int(w * (self._bull_pct / 100.0))
+            painter.setBrush(QColor("#D32F2F"))
+            # If 100%, round all corners, else only round left
+            if self._bull_pct == 100:
+                painter.drawRoundedRect(0, 0, w, h, radius, radius)
+            else:
+                painter.drawRoundedRect(0, 0, bull_w, h, radius, radius)
+                # Fix right corners to be square so they align with the bear background
+                painter.drawRect(bull_w - radius, 0, radius, h)
+                
+        # Center line
+        painter.setBrush(QColor("#FFFFFF"))
+        painter.drawRect(w // 2, 0, 2, h)
+        
+        painter.end()
 
-class NewsWorker(QThread):
-    """Background thread to fetch and analyze news"""
-    item_ready = Signal(dict) # Emit single item when analyzed
-    stats_ready = Signal(dict) # Emit stats when done
-    progress_update = Signal(str) # Status message
+def _get_news_id(item, fallback_index=0):
+    """Stable ID: prefer item['id'] (injected from URL), else fallback."""
+    nid = item.get('id')
+    if nid:
+        return str(nid)
+    url = item.get('url', '')
+    if '/detail/' in url:
+        return url.split('/detail/')[-1]
+    return f"idx_{fallback_index}"
+
+
+class FetchWorker(QThread):
+    """Background thread: fetch raw news only (no AI analysis)."""
+    items_ready = Signal(list)
     error_occurred = Signal(str)
 
-    def __init__(self):
+    def __init__(self, important_only=False, limit=20, since_dt=None):
         super().__init__()
-        self.scraper = Jin10Scraper()
-        self.analyzer = NewsAnalyzer()
-        self.running = True
+        self.important_only = important_only
+        self.limit = limit
+        self.since_dt = since_dt
+        self.controller = NewsController()
 
     def run(self):
         try:
-            # 1. Fetch News
-            self.progress_update.emit("Connecting to Jin10...")
-            try:
-                raw_news = self.scraper.fetch_latest_news(limit=5)
-            except Exception as e:
-                self.error_occurred.emit(f"News Fetch Error: {str(e)}")
-                return # Stop if no news
-                
-            self.progress_update.emit(f"Fetched {len(raw_news)} items. Analyzing...")
-            
-            # 2. Batch Analyze (Cache + Batch Call)
-            analyzed_news = []
-            try:
-                self.progress_update.emit(f"Analyzing {len(raw_news)} items (Batch/Cache)...")
-                # This calls the NEW optimized method in news_ai.py
-                analyzed_news = self.analyzer.analyze_impact_batch(raw_news)
-            except Exception as e:
-                 print(f"AI Analysis Failed: {e}")
-                 # Fallback: Just show raw news without AI
-                 analyzed_news = raw_news
-                 self.progress_update.emit("AI Failed, showing raw news...")
-
-            # 2.5 Fetch Prices (NEW) - Robust
-            try:
-                self.progress_update.emit("Fetching Market Prices...")
-                analyzed_news = PriceFetcher.enrich_news_items(analyzed_news)
-            except Exception as e:
-                print(f"Price Fetch Warning: {e}")
-                # Continue without prices
-            
-            # 3. Process & Emit
-            bullish_count = 0
-            bearish_count = 0
-            total_heat = 0
-            analyzed_count = 0
-            top_sectors = {}
-
-            for idx, item in enumerate(analyzed_news):
-                if not self.running: break
-                
-                # Emit Item
-                self.item_ready.emit(item)
-                
-                # Update Stats if analysis exists
-                analysis_result = item.get('analysis', {})
-                if analysis_result:
-                    sent = analysis_result.get('sentiment', 'Neutral')
-                    if sent == 'Bullish': bullish_count += 1
-                    elif sent == 'Bearish': bearish_count += 1
-                    
-                    score = analysis_result.get('heat_score', 0)
-                    if isinstance(score, int):
-                        total_heat += score
-                        analyzed_count += 1
-                    
-                    sectors = analysis_result.get('sectors', [])
-                    for s in sectors:
-                        top_sectors[s] = top_sectors.get(s, 0) + 1
-
-            # Calculate Avg Heat
-            avg_heat = int(total_heat / analyzed_count) if analyzed_count > 0 else 50
-            
-            stats = {
-                'bullish': bullish_count,
-                'bearish': bearish_count,
-                'heat_score': avg_heat,
-                'top_sectors': sorted(top_sectors.items(), key=lambda x: x[1], reverse=True)[:3]
-            }
-            
-            self.stats_ready.emit(stats)
-            self.progress_update.emit("Done.")
-            
+            raw_news, error_msg = self.controller.fetch_raw_news(
+                limit=self.limit, since_dt=self.since_dt, important_only=self.important_only
+            )
+            if error_msg:
+                self.error_occurred.emit(error_msg)
+            self.items_ready.emit(raw_news or [])
         except Exception as e:
-            self.error_occurred.emit(str(e)) # Global Catch
-            self.progress_update.emit("Error.")
+            logger.error(f"[FetchWorker] Error fetching news: {e}", exc_info=True)
+            self.error_occurred.emit(str(e))
+            self.items_ready.emit([])
+
+
+class AnalyzeSequentialWorker(QThread):
+    """Background thread: sequentially analyze multiple news items."""
+    item_done = Signal(str, dict)  # (news_id, analyzed_item)
+    all_done = Signal()
+    error_occurred = Signal(str)
+
+    def __init__(self, pending_items):
+        super().__init__()
+        self.pending_items = pending_items  # list of (news_id, item_data)
+        self.controller = NewsController()
+        self._is_cancelled = False
+
+    def run(self):
+        for news_id, item_data in self.pending_items:
+            if self._is_cancelled:
+                break
+            try:
+                result = self.controller.analyze_single_item(item_data)
+                self.item_done.emit(news_id, result)
+            except Exception as e:
+                logger.error(f"[AnalyzeSequentialWorker] Failed to analyze {news_id}: {e}", exc_info=True)
+                self.error_occurred.emit(f"Failed {news_id}: {str(e)}")
+        self.all_done.emit()
+
+    def cancel(self):
+        self._is_cancelled = True
+
+class MarketSummaryWorker(QThread):
+    """Background thread: generate market summary from analyzed items."""
+    done = Signal(dict, str)  # (stats, summary_text)
+    error_occurred = Signal(str)
+
+    def __init__(self, analyzed_items):
+        super().__init__()
+        self.analyzed_items = analyzed_items
+        self.controller = NewsController()
+
+    def run(self):
+        try:
+            stats = self.controller.calculate_dashboard_stats(self.analyzed_items)
+            summary = self.controller.get_market_summary(self.analyzed_items)
+            self.done.emit(stats, summary)
+        except Exception as e:
+            logger.error(f"[MarketSummaryWorker] Error generating summary: {e}", exc_info=True)
+            self.error_occurred.emit(str(e))
+
+class AnalyzeItemWorker(QThread):
+    """Background thread: analyze a single news item on demand."""
+    done = Signal(str, dict)  # (news_id, analyzed_item)
+    error_occurred = Signal(str)
+
+    def __init__(self, news_id, item_data):
+        super().__init__()
+        self.news_id = news_id
+        self.item_data = item_data
+        self.controller = NewsController()
+
+    def run(self):
+        try:
+            result = self.controller.analyze_single_item(self.item_data)
+            self.done.emit(self.news_id, result)
+        except Exception as e:
+            logger.error(f"[AnalyzeItemWorker] Error analyzing {self.news_id}: {e}", exc_info=True)
+            self.error_occurred.emit(str(e))
+
 
 class NewsItemWidget(QFrame):
-    def __init__(self, news_data):
+    """
+    A single news card that supports two states:
+    - Pending: shows raw content + 'AI 分析' button
+    - Analyzed: shows sentiment badge, heat, AI summary, affected stocks
+    """
+    analyze_requested = Signal(str)  # Emits news_id when user clicks analyze
+
+    def __init__(self, news_data, news_id="", pending=False):
         super().__init__()
+        self.news_data = news_data
+        self.news_id = news_id
         self.setFrameShape(QFrame.NoFrame)
-        # Card Style with Shadow and Border
         self.setStyleSheet("""
             NewsItemWidget {
                 background-color: #252526;
@@ -173,53 +198,23 @@ class NewsItemWidget(QFrame):
             }
         """)
         
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(10)
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(15, 15, 15, 15)
+        self.main_layout.setSpacing(10)
         
         # --- Row 1: Badges + Time ---
         r1_layout = QHBoxLayout()
         r1_layout.setSpacing(10)
         
-        # Analysis Data
-        analysis = news_data.get('analysis', {})
-        sentiment = analysis.get('sentiment', 'Neutral')
-        heat = analysis.get('heat_score', 0)
         time_str = news_data.get('time', '')
         
-        # Sentiment Badge
-        # TW: Red=Bullish, Green=Bearish
-        sent_bg = "#555"
-        if sentiment == 'Bullish': sent_bg = "#D32F2F" # Red
-        elif sentiment == 'Bearish': sent_bg = "#388E3C" # Green
-        elif sentiment == 'RateLimit': sent_bg = "#F57F17" # Orange/Yellow Warning
+        # Sentiment Badge (updatable)
+        self.lbl_sent = QLabel()
+        r1_layout.addWidget(self.lbl_sent)
         
-        display_sent = sentiment
-        if sentiment == 'RateLimit': display_sent = "⚠️ AI LIMIT"
-        
-        lbl_sent = QLabel(f" {display_sent} ")
-        lbl_sent.setStyleSheet(f"""
-            background-color: {sent_bg}; 
-            color: white; 
-            border-radius: 4px; 
-            padding: 4px 8px; 
-            font-weight: bold; 
-            font-size: 12px;
-        """)
-        r1_layout.addWidget(lbl_sent)
-        
-        # Heat Badge
-        heat_color = "#FFA726" if heat > 80 else "#B0BEC5"
-        lbl_heat = QLabel(f" 🔥 {heat} ")
-        lbl_heat.setStyleSheet(f"""
-            color: {heat_color}; 
-            border: 1px solid {heat_color};
-            border-radius: 4px; 
-            padding: 3px 6px; 
-            font-size: 12px;
-            font-weight: bold;
-        """)
-        r1_layout.addWidget(lbl_heat)
+        # Heat Badge (updatable)
+        self.lbl_heat = QLabel()
+        r1_layout.addWidget(self.lbl_heat)
         
         r1_layout.addStretch()
         
@@ -228,30 +223,117 @@ class NewsItemWidget(QFrame):
         lbl_time.setStyleSheet("color: #9E9E9E; font-family: Consolas, monospace; font-size: 13px;")
         r1_layout.addWidget(lbl_time)
         
-        layout.addLayout(r1_layout)
+        self.main_layout.addLayout(r1_layout)
         
-        # --- Row 2: Content Summary ---
-        summary = analysis.get('summary', news_data.get('content', ''))
-        lbl_content = QLabel(summary)
-        lbl_content.setWordWrap(True)
-        # Premium readable text
-        lbl_content.setStyleSheet("color: #E0E0E0; font-size: 15px; line-height: 1.5; font-family: 'Segoe UI', sans-serif;")
-        # Allow selection?
-        lbl_content.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        layout.addWidget(lbl_content)
+        # --- Row 2: Raw Content (always visible) ---
+        raw_content = news_data.get('data', {}).get('content', '') or news_data.get('content', '')
+        lbl_raw = QLabel(raw_content)
+        lbl_raw.setWordWrap(True)
+        lbl_raw.setStyleSheet("color: #E0E0E0; font-size: 15px; line-height: 1.5; font-family: 'Segoe UI', sans-serif;")
+        lbl_raw.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.main_layout.addWidget(lbl_raw)
         
-        # --- Row 3: Supply Chain Tags (Pills) ---
+        # --- Row 3: Analysis section (updatable) ---
+        self.analysis_container = QWidget()
+        self.analysis_layout = QVBoxLayout(self.analysis_container)
+        self.analysis_layout.setContentsMargins(0, 5, 0, 0)
+        self.analysis_layout.setSpacing(6)
+        self.main_layout.addWidget(self.analysis_container)
+        
+        # Set initial state
+        if pending:
+            self._show_pending()
+        else:
+            analysis = news_data.get('analysis', {})
+            self._apply_analysis(analysis)
+
+    def _show_pending(self):
+        """Show AI analyze button instead of auto-analyzing."""
+        self.lbl_sent.setVisible(False)
+        self.lbl_heat.setVisible(False)
+        
+        self.btn_analyze = QPushButton("🤖 AI 分析")
+        self.btn_analyze.setCursor(QCursor(Qt.PointingHandCursor))
+        self.btn_analyze.setFixedHeight(28)
+        self.btn_analyze.setStyleSheet("""
+            QPushButton {
+                background-color: #0E639C; color: white; border: none;
+                border-radius: 4px; font-size: 12px; font-weight: bold;
+                padding: 2px 12px; max-width: 120px;
+            }
+            QPushButton:hover { background-color: #1177BB; }
+            QPushButton:disabled { background-color: #444; color: #888; }
+        """)
+        self.btn_analyze.clicked.connect(self._on_analyze_clicked)
+        self.analysis_layout.addWidget(self.btn_analyze)
+
+    def _on_analyze_clicked(self):
+        self.btn_analyze.setEnabled(False)
+        self.btn_analyze.setText("⏳ 分析中...")
+        self.analyze_requested.emit(self.news_id)
+
+
+    def update_analysis(self, analysis):
+        """Called when AI analysis completes for this item."""
+        # Clear analysis container
+        while self.analysis_layout.count():
+            child = self.analysis_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        
+        self.btn_analyze = None
+        self._apply_analysis(analysis)
+
+    def _apply_analysis(self, analysis):
+        """Apply analysis data to the badges and analysis section."""
+        if not analysis:
+            return
+            
+        sentiment = analysis.get('sentiment', 'Neutral')
+        heat = analysis.get('heat_score', 0)
+        
+        # Update Sentiment Badge
+        sent_bg = "#555"
+        if sentiment == 'Bullish': sent_bg = "#D32F2F"
+        elif sentiment == 'Bearish': sent_bg = "#388E3C"
+        elif sentiment == 'RateLimit': sent_bg = "#F57F17"
+        
+        display_sent = sentiment
+        if sentiment == 'RateLimit': display_sent = "⚠️ AI LIMIT"
+        
+        self.lbl_sent.setText(f" {display_sent} ")
+        self.lbl_sent.setStyleSheet(
+            f"background-color: {sent_bg}; color: white; border-radius: 4px; "
+            f"padding: 4px 8px; font-weight: bold; font-size: 12px;"
+        )
+        self.lbl_sent.setVisible(True)
+        # AI Sentiment Ratio (Instead of heat index)
+        self.lbl_heat.setText(f" AI熱度: {heat} ")
+        self.lbl_heat.setStyleSheet(
+            f"color: white; background-color: #424242; border: 1px solid #757575; "
+            f"border-radius: 4px; padding: 3px 6px; font-size: 12px; font-weight: bold;"
+        )
+        self.lbl_heat.setVisible(True)
+        
+        # AI Summary (below raw content)
+        summary = analysis.get('summary', '')
+        if summary:
+            lbl_summary = QLabel(f"💡 {summary}")
+            lbl_summary.setWordWrap(True)
+            lbl_summary.setStyleSheet(
+                "color: #B0BEC5; font-size: 13px; line-height: 1.4; "
+                "font-family: 'Segoe UI', sans-serif; padding: 6px 8px; "
+                "background-color: #2A2D2E; border-radius: 4px; border-left: 3px solid #007ACC;"
+            )
+            lbl_summary.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            self.analysis_layout.addWidget(lbl_summary)
+        
+        # Affected Stocks Tags
         affected = analysis.get('affected_stocks', [])
         if affected:
-            # Separator line
-            # line = QFrame()
-            # line.setFrameShape(QFrame.HLine)
-            # line.setStyleSheet("color: #444;")
-            # layout.addWidget(line)
-            
-            tags_container = QWidget()
-            tags_layout = QHBoxLayout(tags_container)
-            tags_layout.setContentsMargins(0, 5, 0, 0)
+            tags_widget = QWidget()
+            tags_layout = QHBoxLayout(tags_widget)
+            tags_layout.setContentsMargins(0, 2, 0, 0)
             tags_layout.setSpacing(6)
             
             lbl_tag_icon = QLabel("🔗")
@@ -263,9 +345,6 @@ class NewsItemWidget(QFrame):
                 corr = stock.get('correlation_percentage', '')
                 mkt = stock.get('market', '')
                 
-                # Style distinction
-                # TW Stocks: Bright Blue pill
-                # US Stocks: Purple pill (or standard)
                 if mkt == 'TW':
                     bg = "#005a9e"
                     border = "#42a5f5"
@@ -275,70 +354,103 @@ class NewsItemWidget(QFrame):
                 
                 tag_text = f"<b>{ticker}</b> {role} <span style='font-size:10px; color:#ddd;'>{corr}%</span>"
                 
-                # Check for Price Data
                 price_data = stock.get('price_data')
                 if price_data:
                     p = price_data['price']
                     pct = price_data['change_pct']
-                    color = "#FF5252" if pct < 0 else "#69F0AE" # Red for drop, Green for rise (TW style check?)
-                    # Wait, TW: Red = Up, Green = Down. US: Green = Up, Red = Down.
-                    # Let's stick to user preference or TW standard since app is TW focused?
-                    # Previous code said: "TW: Red=Bullish". So Red is UP.
+                    # TW: Red = Up, Green = Down
                     color = "#FF5252" if pct > 0 else "#69F0AE"
                     arrow = "▲" if pct > 0 else "▼"
-                    
                     tag_text += f" <span style='color:{color}; font-weight:bold;'>{p:.1f} {arrow}{abs(pct):.1f}%</span>"
 
                 tag = QLabel(tag_text)
-                tag.setStyleSheet(f"""
-                    background-color: {bg}; 
-                    color: white; 
-                    padding: 4px 8px; 
-                    border: 1px solid {border};
-                    border-radius: 12px;
-                    font-size: 12px;
-                """)
+                tag.setStyleSheet(
+                    f"background-color: {bg}; color: white; padding: 4px 8px; "
+                    f"border: 1px solid {border}; border-radius: 12px; font-size: 12px;"
+                )
                 tags_layout.addWidget(tag)
                 
             tags_layout.addStretch()
-            layout.addWidget(tags_container)
+            self.analysis_layout.addWidget(tags_widget)
+
 
 class NewsTab(QWidget):
     def __init__(self, main_window=None):
         super().__init__()
         self.main_window = main_window
-        self.worker = None
+        self.fetch_worker = None
+        self.controller = NewsController()
+        self.analyze_workers = []  # Track active analyze workers
+        self.summary_font_size = 13
+        self.news_widgets = {}  # Track widgets by news_id
+        self.news_raw_data = {}  # Track raw data by news_id for on-demand analysis
+        self.news_analyzed_data = {} # Track analyzed data
+        self.seen_ids = set()   # Avoid duplicates on incremental refresh
+        
+        # Load persisted settings
+        try:
+            self._db = StockDatabase()
+            saved_important = self._db.get_setting("news_important_only", "False")
+            self.important_only = saved_important == "True"
+            saved_font = self._db.get_setting("news_summary_font_size", "13")
+            self.summary_font_size = int(saved_font)
+        except Exception:
+            self._db = None
+            self.important_only = False
+            self.summary_font_size = 13
+            
+        self.is_loading_more = False
+        
         self.setup_ui()
         
-        # Start immediately
-        QTimer.singleShot(300, self.refresh_news)
+        # Apply persisted toggle state to button
+        self.btn_important.setChecked(self.important_only)
+        self.btn_important.setText("★ 僅顯示重要" if self.important_only else "☆ 僅顯示重要")
+        
+        # Auto-refresh timer
+        self._auto_timer = QTimer(self)
+        self._auto_timer.timeout.connect(self._auto_fetch)
+        refresh_sec = self._get_auto_refresh_sec()
+        self._auto_timer.start(refresh_sec * 1000)
+        
+        # First fetch
+        QTimer.singleShot(300, self._auto_fetch)
 
     def setup_ui(self):
         main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         
-        # Use Splitter
+        # Use Splitter (使用者可自由拖曳分配左右面板比例)
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setHandleWidth(2)
+        splitter.setHandleWidth(6)
+        splitter.setChildrenCollapsible(True)
         splitter.setStyleSheet("""
             QSplitter::handle {
                 background-color: #3E3E42;
+                margin: 0 1px;
+            }
+            QSplitter::handle:hover {
+                background-color: #007ACC;
+            }
+            QSplitter::handle:pressed {
+                background-color: #1177BB;
             }
         """)
         
         # --- Left Panel: Dashboard Stats ---
         stats_widget = QWidget()
-        stats_widget.setMinimumWidth(280)
-        # Gradient Background for "Pro" feel
+        stats_widget.setMinimumSize(1, 1)
+
+        stats_widget.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         stats_widget.setStyleSheet("""
             QWidget {
                 background-color: #1E1E1E; 
             }
         """)
         stats_layout = QVBoxLayout(stats_widget)
-        stats_layout.setContentsMargins(10, 10, 20, 10)
-        stats_layout.setSpacing(15)
+        stats_layout.setContentsMargins(12, 12, 12, 12)
+        stats_layout.setSpacing(12)
         
         # Title
         lbl_title = QLabel("MARKET  INTELLIGENCE")
@@ -346,31 +458,26 @@ class NewsTab(QWidget):
         lbl_title.setStyleSheet("color: #666; letter-spacing: 2px;")
         stats_layout.addWidget(lbl_title)
         
-        # Heat Section
-        heat_title = QLabel("AI 投資熱度")
+        # Sentiment Ratio Section
+        heat_title = QLabel("⚖️ AI 新聞情緒分佈 (多空比例)")
         heat_title.setStyleSheet("color: white; font-size: 20px; font-weight: bold;")
         stats_layout.addWidget(heat_title)
         
-        self.heat_bar = QProgressBar()
-        self.heat_bar.setRange(0, 100)
-        self.heat_bar.setValue(0)
-        self.heat_bar.setTextVisible(True)
-        self.heat_bar.setFixedHeight(25)
-        self.heat_bar.setStyleSheet("""
-            QProgressBar {
-                border: none;
-                background-color: #333;
-                border-radius: 12px;
-                text-align: center;
-                color: white;
-                font-weight: bold;
-            }
-            QProgressBar::chunk {
-                border-radius: 12px;
-                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #444, stop:1 #FFA726);
-            }
-        """)
-        stats_layout.addWidget(self.heat_bar)
+        self.heat_gauge = SentimentRatioBar()
+        stats_layout.addWidget(self.heat_gauge)
+        
+        # Gauge legend
+        legend_layout = QHBoxLayout()
+        legend_layout.setContentsMargins(0, 0, 0, 0)
+        lbl_bear_legend = QLabel("◀ 看空")
+        lbl_bear_legend.setStyleSheet("color: #66BB6A; font-size: 10px;")
+        lbl_bull_legend = QLabel("看多 ▶")
+        lbl_bull_legend.setStyleSheet("color: #F57C00; font-size: 10px;")
+        lbl_bull_legend.setAlignment(Qt.AlignRight)
+        legend_layout.addWidget(lbl_bear_legend)
+        legend_layout.addStretch()
+        legend_layout.addWidget(lbl_bull_legend)
+        stats_layout.addLayout(legend_layout)
         
         # Cards for Counts
         grid = QGridLayout()
@@ -383,7 +490,7 @@ class NewsTab(QWidget):
             l.setContentsMargins(10, 10, 10, 10)
             t = QLabel(title)
             t.setStyleSheet("color: #AAA; font-size: 12px;")
-            v = QLabel("---")
+            v = QLabel("—")
             v.setStyleSheet(f"color: white; font-size: 24px; font-weight: bold;")
             l.addWidget(t)
             l.addWidget(v)
@@ -397,43 +504,137 @@ class NewsTab(QWidget):
         stats_layout.addLayout(grid)
         
         # Top Sectors
-        stats_layout.addWidget(QLabel("🔥 熱門板塊"))
-        self.lbl_sectors = QLabel("等待分析...")
-        self.lbl_sectors.setStyleSheet("color: #CCC; font-size: 14px; line-height: 1.6; padding-left: 5px;")
+        lbl_sector_title = QLabel("📊 熱門板塊")
+        lbl_sector_title.setStyleSheet("color: #AAA; font-size: 13px; font-weight: bold;")
+        stats_layout.addWidget(lbl_sector_title)
+        self.lbl_sectors = QLabel("👆 點擊「一鍵分析」後顯示")
+        self.lbl_sectors.setStyleSheet("color: #777; font-size: 14px; line-height: 1.6; padding-left: 5px;")
         stats_layout.addWidget(self.lbl_sectors)
         
-        stats_layout.addStretch()
+        # AI Market Summary Title & Controls
+        title_layout = QHBoxLayout()
+        lbl_summary_title = QLabel("🤖 AI 分析總覽")
+        lbl_summary_title.setStyleSheet("color: white; font-size: 16px; font-weight: bold;")
+        title_layout.addWidget(lbl_summary_title)
         
-        # Refresh Button
-        self.btn_refresh = QPushButton("⚡  REFRESH")
-        self.btn_refresh.setCursor(QCursor(Qt.PointingHandCursor))
-        self.btn_refresh.setFixedHeight(40)
-        self.btn_refresh.setStyleSheet("""
+        title_layout.addStretch()
+        
+        self.btn_generate_summary = QPushButton("📊 產出總覽")
+        self.btn_generate_summary.setCursor(QCursor(Qt.PointingHandCursor))
+        self.btn_generate_summary.setStyleSheet("background-color: #D4A017; color: #000; border: none; padding: 4px 8px; border-radius: 4px; font-weight: bold;")
+        self.btn_generate_summary.clicked.connect(self._generate_market_summary)
+        title_layout.addWidget(self.btn_generate_summary)
+        
+        btn_font_dec = QPushButton("A-")
+        btn_font_dec.setFixedSize(28, 24)
+        btn_font_dec.setCursor(Qt.PointingHandCursor)
+        btn_font_dec.setStyleSheet("background-color: #3E3E42; color: white; border: none; border-radius: 3px;")
+        btn_font_dec.clicked.connect(self.decrease_summary_font)
+        title_layout.addWidget(btn_font_dec)
+        
+        btn_font_inc = QPushButton("A+")
+        btn_font_inc.setFixedSize(28, 24)
+        btn_font_inc.setCursor(Qt.PointingHandCursor)
+        btn_font_inc.setStyleSheet("background-color: #3E3E42; color: white; border: none; border-radius: 3px;")
+        btn_font_inc.clicked.connect(self.increase_summary_font)
+        title_layout.addWidget(btn_font_inc)
+        
+        title_layout.setContentsMargins(0, 10, 0, 0)
+        stats_layout.addLayout(title_layout)
+        
+        self.lbl_summary = QLabel("👆 分析新聞後，點擊「📊 產出總覽」即可產生 AI 市場摘要")
+        self.lbl_summary.setWordWrap(True)
+        self.lbl_summary.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.update_summary_style()
+        
+        summary_scroll = QScrollArea()
+        summary_scroll.setWidgetResizable(True)
+        summary_scroll.setFrameShape(QFrame.NoFrame)
+        summary_scroll.setWidget(self.lbl_summary)
+        summary_scroll.setStyleSheet("background: transparent;")
+        stats_layout.addWidget(summary_scroll, stretch=1)
+
+        # Important-Only Toggle (value loaded in __init__)
+        self.btn_important = QPushButton("☆ 僅顯示重要")
+        self.btn_important.setToolTip("僅顯示金十快訊編輯精選的重大新聞")
+        self.btn_important.setCursor(QCursor(Qt.PointingHandCursor))
+        self.btn_important.setFixedHeight(32)
+        self.btn_important.setCheckable(True)
+        self.btn_important.setStyleSheet("""
             QPushButton {
-                background-color: #007ACC;
-                color: white;
-                font-weight: bold;
-                border: none;
+                background-color: #333;
+                color: #AAA;
+                border: 1px solid #555;
                 border-radius: 4px;
+                font-size: 12px;
+                padding: 4px 12px;
+            }
+            QPushButton:checked {
+                background-color: #D4A017;
+                color: #000;
+                border: 1px solid #FFD700;
+                font-weight: bold;
             }
             QPushButton:hover {
-                background-color: #0098FF;
-            }
-            QPushButton:disabled {
-                background-color: #444;
-                color: #888;
+                border-color: #FFD700;
             }
         """)
-        self.btn_refresh.clicked.connect(self.refresh_news)
-        stats_layout.addWidget(self.btn_refresh)
+        self.btn_important.clicked.connect(self._toggle_important)
+        stats_layout.addWidget(self.btn_important)
+
+        # Auto-refresh status label (replaces refresh button)
+        refresh_sec = self._get_auto_refresh_sec()
+        self.lbl_auto_status = QLabel(f"🔄 自動刷新中 ({refresh_sec}s)")
+        self.lbl_auto_status.setStyleSheet(
+            "color: #888; font-size: 11px; padding: 4px 0;"
+        )
+        stats_layout.addWidget(self.lbl_auto_status)
+        
+        # Error status bar (P2 #4)
+        self.lbl_error_bar = QLabel("")
+        self.lbl_error_bar.setStyleSheet(
+            "color: #FFD54F; background-color: #3E2723; font-size: 11px; "
+            "padding: 4px 8px; border-radius: 4px;"
+        )
+        self.lbl_error_bar.setVisible(False)
+        self.lbl_error_bar.setWordWrap(True)
+        stats_layout.addWidget(self.lbl_error_bar)
+        self._error_timer = QTimer(self)
+        self._error_timer.setSingleShot(True)
+        self._error_timer.timeout.connect(lambda: self.lbl_error_bar.setVisible(False))
         
         splitter.addWidget(stats_widget)
         
         # --- Right Panel: News Feed ---
         feed_widget = QWidget()
+        feed_widget.setMinimumSize(1, 1)
+
+        feed_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         feed_widget.setStyleSheet("background-color: #1e1e1e;")
         feed_layout = QVBoxLayout(feed_widget)
         feed_layout.setContentsMargins(0, 0, 0, 0)
+        
+        feed_header_layout = QHBoxLayout()
+        feed_header_layout.setContentsMargins(10, 10, 10, 5)
+        feed_title = QLabel("📰 最新動態")
+        feed_title.setStyleSheet("color: white; font-size: 16px; font-weight: bold;")
+        feed_header_layout.addWidget(feed_title)
+        
+        feed_header_layout.addStretch()
+        
+        self.btn_analyze_all = QPushButton("⚡ 一鍵分析未處理")
+        self.btn_analyze_all.setCursor(QCursor(Qt.PointingHandCursor))
+        self.btn_analyze_all.setStyleSheet("background-color: #007ACC; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold;")
+        self.btn_analyze_all.clicked.connect(self._analyze_all_pending)
+        feed_header_layout.addWidget(self.btn_analyze_all)
+        
+        self.btn_refresh = QPushButton("🔄 重新整理")
+        self.btn_refresh.setCursor(QCursor(Qt.PointingHandCursor))
+        self.btn_refresh.setStyleSheet("background-color: #3E3E42; color: #E0E0E0; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold;")
+        self.btn_refresh.clicked.connect(self._manual_refresh)
+        feed_header_layout.addWidget(self.btn_refresh)
+        
+        feed_layout.addLayout(feed_header_layout)
         
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -460,68 +661,351 @@ class NewsTab(QWidget):
         self.scroll_content.setStyleSheet("background-color: #1e1e1e;")
         self.vbox_news = QVBoxLayout(self.scroll_content)
         self.vbox_news.setAlignment(Qt.AlignTop)
-        self.vbox_news.setContentsMargins(20, 20, 20, 20) # More padding
+        self.vbox_news.setContentsMargins(20, 20, 20, 20)
+        
+        # Loading spinner (P2 #5)
+        self.lbl_loading = QLabel("⏳ 正在載入最新快訊...")
+        self.lbl_loading.setAlignment(Qt.AlignCenter)
+        self.lbl_loading.setStyleSheet("color: #888; font-size: 14px; padding: 40px 0;")
+        self.vbox_news.addWidget(self.lbl_loading)
         
         self.scroll.setWidget(self.scroll_content)
         feed_layout.addWidget(self.scroll)
         
+        # --- Load More Button ---
+        self.btn_load_more = QPushButton("載入更多新聞")
+        self.btn_load_more.setCursor(QCursor(Qt.PointingHandCursor))
+        self.btn_load_more.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2D30;
+                color: #E0E0E0;
+                border: 1px solid #3E3E42;
+                border-radius: 4px;
+                padding: 10px;
+                font-weight: bold;
+                margin: 5px 10px;
+            }
+            QPushButton:hover {
+                background-color: #3E3E42;
+                border: 1px solid #007ACC;
+            }
+        """)
+        self.btn_load_more.clicked.connect(self._on_load_more)
+        feed_layout.addWidget(self.btn_load_more)
+        
         splitter.addWidget(feed_widget)
         
-        # Ratio
-        splitter.setCollapsible(0, False) # Can't hide stats
-        splitter.setStretchFactor(0, 3) # 30%
-        splitter.setStretchFactor(1, 7) # 70%
+        # Ratio (使用者可自由拖曳調整)
+        splitter.setCollapsible(0, True)
+        splitter.setCollapsible(1, False)
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 7)
         
         main_layout.addWidget(splitter)
 
-    def refresh_news(self):
-        self.btn_refresh.setEnabled(False)
-        self.btn_refresh.setText("⏳ 分析中 (Analyzing)...")
-        
-        # Clear
-        for i in reversed(range(self.vbox_news.count())): 
-            w = self.vbox_news.itemAt(i).widget()
-            if w: w.setParent(None)
+    def increase_summary_font(self):
+        if self.summary_font_size < 24:
+            self.summary_font_size += 1
+            self.update_summary_style()
+            try:
+                if self._db: self._db.set_setting("news_summary_font_size", str(self.summary_font_size))
+            except Exception: pass
+
+    def decrease_summary_font(self):
+        if self.summary_font_size > 10:
+            self.summary_font_size -= 1
+            self.update_summary_style()
+            try:
+                if self._db: self._db.set_setting("news_summary_font_size", str(self.summary_font_size))
+            except Exception: pass
+
+    def update_summary_style(self):
+        self.lbl_summary.setStyleSheet(f"""
+            background-color: #2D2D30;
+            color: #E0E0E0; 
+            font-size: {self.summary_font_size}px; 
+            line-height: 1.5; 
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #3E3E42;
+        """)
+
+    def _get_news_settings(self):
+        try:
+            scope_type = self._db.get_setting("news_scope_type", "則")
+            scope_value = int(self._db.get_setting("news_scope_value", "20"))
+        except Exception:
+            scope_type = "則"
+            scope_value = 20
+        return scope_type, scope_value
+
+    def _get_auto_refresh_sec(self):
+        try:
+            if self._db:
+                return int(self._db.get_setting("news_auto_refresh", "60"))
+        except:
+            pass
+        return 60
+
+    def _get_load_amount(self):
+        try:
+            return int(self._db.get_setting("news_load_amount", "5"))
+        except:
+            return 5
+
+    def _auto_fetch(self):
+        """Auto-fetch latest news (called by timer and on init)."""
+        if self.fetch_worker and self.fetch_worker.isRunning():
+            return  # Skip if already fetching
             
-        self.worker = NewsWorker()
-        self.worker.item_ready.connect(self.on_item_ready)
-        self.worker.stats_ready.connect(self.on_stats_ready)
-        self.worker.progress_update.connect(self.on_progress)
-        self.worker.error_occurred.connect(self.on_error)
-        self.worker.finished.connect(self.on_worker_finished)
-        self.worker.start()
-
-    def on_progress(self, msg):
-        self.btn_refresh.setText(f"⏳ {msg}")
-
-    def on_item_ready(self, item):
-        w = NewsItemWidget(item)
-        self.vbox_news.addWidget(w)
+        scope_type, scope_value = self._get_news_settings()
+        limit = 20
+        since_dt = None
         
-    def on_stats_ready(self, stats):
-        heat = stats['heat_score']
-        self.heat_bar.setValue(heat)
-        
-        # Color coding
-        # >50 = Hot (Bullish?), or just momentum?
-        # Let's use simple heatmap colors
-        
-        self.lbl_bull_count.setText(str(stats['bullish']))
-        self.lbl_bear_count.setText(str(stats['bearish']))
-        
-        sectors = stats['top_sectors']
-        if sectors:
-            # Styled text
-            html = ""
-            for k, v in sectors:
-                html += f"<div style='margin-bottom:4px;'>• <b style='color:#FFF;'>{k}</b> <span style='color:#888;'>({v})</span></div>"
-            self.lbl_sectors.setText(html)
+        if "小時" in scope_type:
+            since_dt = datetime.now() - timedelta(hours=scope_value)
+        elif "天" in scope_type:
+            since_dt = datetime.now() - timedelta(days=scope_value)
         else:
-            self.lbl_sectors.setText("無顯著板塊")
-            
-    def on_error(self, msg):
-        print(f"News Error: {msg}")
+            limit = scope_value
         
-    def on_worker_finished(self):
-        self.btn_refresh.setEnabled(True)
-        self.btn_refresh.setText("⚡  REFRESH")
+        # Update timer if setting changed
+        refresh_sec = self._get_auto_refresh_sec()
+        if self._auto_timer.interval() != refresh_sec * 1000:
+            self._auto_timer.setInterval(refresh_sec * 1000)
+            
+        self.is_loading_more = False
+        self.lbl_auto_status.setText("🔄 抓取中...")
+        self.fetch_worker = FetchWorker(important_only=self.important_only, limit=limit, since_dt=since_dt)
+        self.fetch_worker.items_ready.connect(self._on_items_fetched)
+        self.fetch_worker.error_occurred.connect(self.on_error)
+        self.fetch_worker.start()
+
+    def _on_load_more(self):
+        """Fetch older news by increasing the limit beyond currently seen items."""
+        if self.fetch_worker and self.fetch_worker.isRunning():
+            return
+            
+        self.is_loading_more = True
+        self.btn_load_more.setText("⏳ 載入中...")
+        self.btn_load_more.setEnabled(False)
+        
+        # To get older items, we bypass time limits and just fetch N items,
+        # where N is our current loaded count + the load amount.
+        target_limit = len(self.seen_ids) + self._get_load_amount()
+        if target_limit < 10: target_limit = 10
+        
+        self.fetch_worker = FetchWorker(important_only=self.important_only, limit=target_limit, since_dt=None)
+        self.fetch_worker.items_ready.connect(self._on_items_fetched)
+        self.fetch_worker.error_occurred.connect(self.on_error)
+        self.fetch_worker.start()
+
+    def _on_items_fetched(self, items):
+        """Incremental update: Check cache directly to skip pending state for cached items."""
+        now_str = datetime.now().strftime("%H:%M:%S")
+        
+        new_items = []
+        for i, item in enumerate(items):
+            news_id = _get_news_id(item, i)
+            if news_id not in self.seen_ids:
+                new_items.append((news_id, item))
+                self.seen_ids.add(news_id)
+                self.news_raw_data[news_id] = item
+
+        # Refresh Load More Button
+        if hasattr(self, 'btn_load_more'):
+            self.btn_load_more.setEnabled(True)
+            self.btn_load_more.setText("載入更多新聞")
+
+        # Hide loading spinner once items arrive
+        if hasattr(self, 'lbl_loading') and self.lbl_loading.isVisible():
+            self.lbl_loading.setVisible(False)
+        
+        if not new_items:
+            self.lbl_auto_status.setText(f"🔄 上次更新 {now_str}")
+            self.is_loading_more = False
+            return
+            
+        # For auto-refresh (new items), reverse the list to prepend newest at the top correctly
+        if not self.is_loading_more:
+            new_items.reverse()
+            
+        for news_id, item in new_items:
+            # CHECK CACHE
+            cached_result = self.controller.analyzer.cache_manager.get_analysis(news_id)
+            is_valid_cache = False
+            if cached_result:
+                summary = cached_result.get('summary', '')
+                if "無法分析" not in summary and "JSON 格式錯誤" not in summary and "AI Error" not in summary:
+                    is_valid_cache = True
+                    
+            if is_valid_cache:
+                item['analysis'] = cached_result
+                self.news_analyzed_data[news_id] = item
+                w = NewsItemWidget(item, news_id=news_id, pending=False)
+            else:
+                w = NewsItemWidget(item, news_id=news_id, pending=True)
+                w.analyze_requested.connect(self._request_analyze)
+                
+            self.news_widgets[news_id] = w
+            
+            # Place widget
+            if self.is_loading_more:
+                self.vbox_news.addWidget(w)
+            else:
+                self.vbox_news.insertWidget(0, w)
+        
+        status = f"🔄 上次更新 {now_str}"
+        if new_items:
+            status += f" (+{len(new_items)} 則新聞)"
+        self.lbl_auto_status.setText(status)
+        self.is_loading_more = False
+        
+        # Update dashboard if any cached items were loaded
+        self._update_realtime_stats()
+
+    def _request_analyze(self, news_id):
+        """On-demand: user clicked AI analyze on a specific card."""
+        item_data = self.news_raw_data.get(news_id)
+        if not item_data:
+            return
+        worker = AnalyzeItemWorker(news_id, item_data)
+        worker.done.connect(self._on_item_analyzed)
+        worker.error_occurred.connect(self.on_error)
+        worker.finished.connect(lambda: self._cleanup_worker(worker))
+        self.analyze_workers.append(worker)
+        worker.start()
+
+    def _analyze_all_pending(self):
+        pending_items = []
+        for news_id, w in self.news_widgets.items():
+            if news_id not in self.news_analyzed_data and getattr(w, 'btn_analyze', None) and w.btn_analyze.isEnabled():
+                pending_items.append((news_id, self.news_raw_data[news_id]))
+                w.btn_analyze.setEnabled(False)
+                w.btn_analyze.setText("⏳ 佇列中...")
+        
+        if not pending_items:
+            QMessageBox.information(self, "提示", "目前沒有未分析的新聞。")
+            return
+            
+        self.btn_analyze_all.setText("⏳ 批次分析中...")
+        self.btn_analyze_all.setEnabled(False)
+        
+        worker = AnalyzeSequentialWorker(pending_items)
+        worker.item_done.connect(self._on_item_analyzed)
+        worker.all_done.connect(lambda: self._on_analyze_all_done(worker))
+        worker.error_occurred.connect(self.on_error)
+        self.analyze_workers.append(worker)
+        worker.start()
+
+    def _on_analyze_all_done(self, worker):
+        self.btn_analyze_all.setText("⚡ 一鍵分析未處理")
+        self.btn_analyze_all.setEnabled(True)
+        self._cleanup_worker(worker)
+
+    def _generate_market_summary(self):
+        analyzed_items = list(self.news_analyzed_data.values())
+                
+        if not analyzed_items:
+            QMessageBox.information(self, "提示", "請先分析至少一則新聞，才能產出總覽。")
+            return
+            
+        self.btn_generate_summary.setText("⏳ 產生中...")
+        self.btn_generate_summary.setEnabled(False)
+        self.lbl_summary.setText("🤖 正在統合分析已處理的新聞，請稍候...")
+        
+        worker = MarketSummaryWorker(analyzed_items)
+        worker.done.connect(self._on_summary_done)
+        worker.error_occurred.connect(self._on_summary_error)
+        self.summary_worker = worker 
+        worker.start()
+
+    def _on_summary_done(self, stats, summary):
+        self.btn_generate_summary.setText("📊 產出總覽")
+        self.btn_generate_summary.setEnabled(True)
+        
+        self.lbl_bull_count.setText(str(stats.get('bullish', 0)))
+        self.lbl_bear_count.setText(str(stats.get('bearish', 0)))
+        self._set_heat_bar_score(stats.get('bullish', 0), stats.get('bearish', 0))
+        sectors = [f"{s} ({c})" for s, c in stats.get('top_sectors', [])]
+        self.lbl_sectors.setText("、".join(sectors) if sectors else "無集中板塊")
+        
+        self.lbl_summary.setText(summary)
+
+    def _on_summary_error(self, err):
+        self.btn_generate_summary.setText("📊 產出總覽")
+        self.btn_generate_summary.setEnabled(True)
+        self.lbl_summary.setText(f"❌ 總覽產生失敗: {err}")
+        self.on_error(err)
+
+    def _on_item_analyzed(self, news_id, analyzed_item):
+        """Single item analysis complete: update its card."""
+        self.news_analyzed_data[news_id] = analyzed_item
+        w = self.news_widgets.get(news_id)
+        if w:
+            analysis = analyzed_item.get('analysis', {})
+            w.update_analysis(analysis)
+        self._update_realtime_stats()
+
+    def _update_realtime_stats(self):
+        analyzed_items = list(self.news_analyzed_data.values())
+        if not analyzed_items:
+            return
+            
+        controller = NewsController()
+        try:
+            stats = controller.calculate_dashboard_stats(analyzed_items)
+            self.lbl_bull_count.setText(str(stats.get('bullish', 0)))
+            self.lbl_bear_count.setText(str(stats.get('bearish', 0)))
+            self._set_heat_bar_score(stats.get('bullish', 0), stats.get('bearish', 0))
+            sectors = [f"{s} ({c})" for s, c in stats.get('top_sectors', [])]
+            self.lbl_sectors.setText("、".join(sectors) if sectors else "無集中板塊")
+        except Exception as e:
+            logger.error(f"Error updating realtime stats: {e}", exc_info=True)
+
+    def _set_heat_bar_score(self, bull_count: int, bear_count: int):
+        self.heat_gauge.set_ratio(bull_count, bear_count)
+
+    def _cleanup_worker(self, worker):
+        if worker in self.analyze_workers:
+            self.analyze_workers.remove(worker)
+
+    def _manual_refresh(self):
+        """User clicked refresh: clear all and re-fetch."""
+        self._clear_all()
+        self._auto_fetch()
+
+    def _toggle_important(self, checked):
+        """Toggle important-only: switches data source and refreshes."""
+        self.important_only = checked
+        self.btn_important.setText("★ 僅顯示重要" if checked else "☆ 僅顯示重要")
+        # Persist state
+        try:
+            if self._db:
+                self._db.set_setting("news_important_only", str(checked))
+        except Exception:
+            pass
+        # Full clear + re-fetch with new data source
+        self._clear_all()
+        self._auto_fetch()
+
+
+    def _clear_all(self):
+        """Clear all cards and tracking state."""
+        self.news_widgets = {}
+        self.news_raw_data = {}
+        self.news_analyzed_data = {}
+        self.seen_ids = set()
+        for i in reversed(range(self.vbox_news.count())):
+            w = self.vbox_news.itemAt(i).widget()
+            if w:
+                w.setParent(None)
+
+    def on_error(self, msg):
+        logger.error(f"News Error UI Signal: {msg}")
+        # Show error in status bar for 5 seconds
+        if hasattr(self, 'lbl_error_bar'):
+            self.lbl_error_bar.setText(f"⚠️ {msg}")
+            self.lbl_error_bar.setVisible(True)
+            self._error_timer.start(5000)
+

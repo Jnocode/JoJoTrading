@@ -90,7 +90,8 @@ class StockDatabase:
             "update_rate": "Fast (0.5s)",
             "enable_sound": "True",
             "auto_connect": "True",
-            "theme": "Dark"
+            "theme": "Dark",
+            "ai_provider": "Gemini"
         }
         
         for k, v in defaults.items():

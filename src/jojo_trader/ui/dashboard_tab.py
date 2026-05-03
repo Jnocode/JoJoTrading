@@ -6,6 +6,42 @@ from PySide6.QtGui import QFont, QColor
 import json
 from datetime import datetime
 from jojo_trading.core.stock_database import StockDatabase
+from PySide6.QtCore import Qt, QTimer, QThread, Signal
+
+class MarketDataWorker(QThread):
+    finished = Signal(dict)
+    
+    def run(self):
+        try:
+            import yfinance as yf
+            # Tickers: TWSE, S&P500, Nasdaq, SOX, VIX, TSMC
+            tickers = {
+                'TAIEX': '^TWII',
+                'S&P 500': '^GSPC',
+                'NASDAQ': '^IXIC',
+                'SOX': '^SOX',
+                'VIX': '^VIX',
+                'TSMC': '2330.TW'
+            }
+            
+            data = {}
+            for name, symbol in tickers.items():
+                try:
+                    t = yf.Ticker(symbol)
+                    # Use fast info or history
+                    hist = t.history(period="2d")
+                    if len(hist) >= 1:
+                        close = hist.iloc[-1]['Close']
+                        prev = hist.iloc[-2]['Close'] if len(hist) > 1 else close
+                        change = ((close - prev) / prev) * 100
+                        data[name] = {'price': close, 'change': change}
+                except:
+                    data[name] = {'price': 0, 'change': 0}
+            
+            self.finished.emit(data)
+        except Exception as e:
+            print(f"Market Data Error: {e}")
+            self.finished.emit({})
 
 class DashboardTab(QWidget):
     """
@@ -14,6 +50,7 @@ class DashboardTab(QWidget):
     def __init__(self, main_window):
         super().__init__()
         self.main = main_window
+        self.market_worker = None
         self.setup_ui()
         
         # Auto Refresh Timer (10s)
@@ -39,21 +76,35 @@ class DashboardTab(QWidget):
         content_layout = QHBoxLayout()
         
         # --- Card 0: Market Overview (New) ---
-        self.card_market = self.create_card("Market Overview (大盤)")
+        self.card_market = self.create_card("Market Overview (全球行情)")
         m_layout = QVBoxLayout(self.card_market)
         
-        # TAIEX
-        self.lbl_taiex = QLabel("TAIEX: -")
-        self.lbl_taiex.setFont(QFont("Segoe UI", 12))
-        self.lbl_taiex.setStyleSheet("color: white;")
-        m_layout.addWidget(self.lbl_taiex)
+        # Market Grid
+        m_grid = QGridLayout()
+        self.market_labels = {}
+        row = 0
+        col = 0
+        for name in ['TAIEX', 'TSMC', 'S&P 500', 'NASDAQ', 'SOX', 'VIX']:
+            # Name
+            l_name = QLabel(name)
+            l_name.setStyleSheet("color: #CCC; font-size: 13px;")
+            m_grid.addWidget(l_name, row, col)
+            
+            # Price/Change
+            l_val = QLabel("---")
+            l_val.setFont(QFont("Consolas", 14, QFont.Bold))
+            l_val.setStyleSheet("color: white;")
+            l_val.setAlignment(Qt.AlignmentFlag.AlignRight)
+            m_grid.addWidget(l_val, row, col+1)
+            
+            self.market_labels[name] = l_val
+            
+            col += 2
+            if col >= 4: # 2 items per row
+                col = 0
+                row += 1
         
-        # OTC
-        self.lbl_otc = QLabel("OTC: -")
-        self.lbl_otc.setFont(QFont("Segoe UI", 12))
-        self.lbl_otc.setStyleSheet("color: white;")
-        m_layout.addWidget(self.lbl_otc)
-        
+        m_layout.addLayout(m_grid)
         m_layout.addStretch()
         content_layout.addWidget(self.card_market)
 
@@ -138,6 +189,16 @@ class DashboardTab(QWidget):
 
 
     def refresh_data(self):
+        # 0. Market Data
+        if not getattr(self, 'market_worker', None):
+            self.market_worker = MarketDataWorker()
+            self.market_worker.finished.connect(self.on_market_data)
+        
+        if not self.market_worker.isRunning():
+            try:
+                self.market_worker.start()
+            except: pass
+
         connector = getattr(self.main, 'connector', None)
         if not connector or not connector.is_connected:
             self.lbl_equity.setText("Equity: (Disconnect)")
@@ -266,3 +327,20 @@ class DashboardTab(QWidget):
             self.lbl_total_pay.setStyleSheet("color: #66bb6a; font-weight: bold;") 
         else:
             self.lbl_total_pay.setStyleSheet("color: #ff6b6b; font-weight: bold;")
+
+    def on_market_data(self, data):
+        for name, info in data.items():
+            if name in self.market_labels:
+                lbl = self.market_labels[name]
+                price = info['price']
+                change = info['change']
+                
+                color = "#F44336" if change > 0 else "#4CAF50" # TW: Red is Up
+                if name in ['S&P 500', 'NASDAQ', 'SOX', 'VIX']:
+                    color = "#4CAF50" if change > 0 else "#F44336" # US: Green is Up
+                
+                # Special color for VIX
+                if name == 'VIX': color = "#F44336" if change > 0 else "#4CAF50"
+
+                lbl.setText(f"{price:,.2f} ({change:+.2f}%)")
+                lbl.setStyleSheet(f"color: {color}; font-family: Consolas; font-weight: bold; font-size: 13px;")

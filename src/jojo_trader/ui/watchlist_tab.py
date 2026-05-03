@@ -477,14 +477,11 @@ class WatchlistTab(QWidget):
         self.current_chart_code = None
         
         # Init Signal Bridge
-        if ShioajiSignalBridge:
-            self.bridge = ShioajiSignalBridge()
+        # Init Signal Bridge (Use Main Window's Global Bridge)
+        if hasattr(self.main, 'bridge') and self.main.bridge:
+            self.bridge = self.main.bridge
             self.bridge.quote_received.connect(self.on_realtime_quote)
             self.bridge.tick_received.connect(self.on_realtime_tick)
-            
-            # Inject Bridge to Connector
-            if hasattr(self.main, 'connector') and self.main.connector:
-                self.main.connector.set_bridge(self.bridge)
         else:
             self.bridge = None
             
