@@ -227,9 +227,38 @@ class FinMindFetcher:
 
     def get_eps_data(self, stock_code: str, quarters: int = 4) -> pd.DataFrame:
         """
-        Placeholder for EPS data fetch to prevent AttributeError in data adapter.
+        Fetch EPS data from financial statements.
         """
-        return pd.DataFrame()
+        try:
+            # Approximating quarters to days
+            days = quarters * 90 + 90
+            end_date = datetime.date.today()
+            start_date = end_date - datetime.timedelta(days=days)
+            
+            df = self.loader.taiwan_stock_financial_statement(
+                stock_id=stock_code,
+                start_date=start_date.strftime("%Y-%m-%d"),
+                end_date=end_date.strftime("%Y-%m-%d")
+            )
+            
+            if df.empty:
+                return pd.DataFrame()
+                
+            # Filter for EPS
+            eps_df = df[df['type'] == 'EPS'].copy()
+            if eps_df.empty:
+                return pd.DataFrame()
+                
+            # Rename columns to standard format
+            eps_df = eps_df.rename(columns={'value': 'EPS'})
+            
+            # Select required columns
+            cols = ['date', 'EPS']
+            return eps_df[cols]
+            
+        except Exception as e:
+            print(f"❌ FinMind EPS Fetch Error: {e}")
+            return pd.DataFrame()
 
 
 if __name__ == "__main__":

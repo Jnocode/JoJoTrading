@@ -183,6 +183,18 @@ class BacktestChart(QWidget):
         raw_html = fig.to_html(include_plotlyjs=True)
         
         if self.web_view:
-             self.web_view.setHtml(raw_html)
+             from PySide6.QtCore import QUrl
+             import uuid
+             
+             # QWebEngineView.setHtml() has a size limit which drops large strings silently.
+             # Since include_plotlyjs=True creates a >3MB string, we must save to a temp file and load via URL.
+             temp_dir = tempfile.gettempdir()
+             temp_filename = f"jojo_chart_{uuid.uuid4().hex}.html"
+             temp_filepath = os.path.join(temp_dir, temp_filename)
+             
+             with open(temp_filepath, 'w', encoding='utf-8') as f:
+                 f.write(raw_html)
+                 
+             self.web_view.setUrl(QUrl.fromLocalFile(temp_filepath))
         else:
              print("Skipping Chart Render: WebEngine not available")
