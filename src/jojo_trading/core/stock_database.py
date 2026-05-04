@@ -285,6 +285,15 @@ class StockDatabase:
         conn.close()
         return df
 
+    def get_all_sectors(self):
+        """Get all unique sectors from stocks"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT sector FROM stocks WHERE is_active = 1 AND sector IS NOT NULL AND sector != '' ORDER BY sector")
+        rows = cursor.fetchall()
+        conn.close()
+        return [r[0] for r in rows]
+
     def get_top_potential_stocks(self, limit=50, min_market_cap=0):
         """Get top stocks by potential return"""
         conn = sqlite3.connect(self.db_path)

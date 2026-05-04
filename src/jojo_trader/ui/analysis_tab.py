@@ -234,20 +234,23 @@ class AnalysisTab(QWidget):
         
         self.lbl_eps.setText(f"{info['eps']:.2f}")
         
-        f_buy = info['foreign_buy']
-        self.lbl_chip.setText(f"{f_buy:,.0f} 張")
-        self.lbl_chip.setStyleSheet(f"color: {'#FF0000' if f_buy > 0 else '#00FF00'}; font-size: 14px;")
+        f_buy = info.get('foreign_buy', 0)
+        f_buy_lots = f_buy / 1000 if f_buy else 0
+        self.lbl_chip.setText(f"{f_buy_lots:,.0f} 張")
+        self.lbl_chip.setStyleSheet(f"color: {'#FF0000' if f_buy_lots > 0 else '#00FF00'}; font-size: 14px;")
         
         # Update Chart
         self.chart.plot(df, []) # No trades
         
-        # Update DCF Data
+        # Update DCF Data — 使用 stocks.db 的統一資料源
         try:
              price = info['price']
              shares = info.get('shares', 10.0)
              net_income = info.get('net_income', 10.0)
+             intrinsic_value = info.get('intrinsic_value', 0.0)
+             data_source = info.get('data_source', '')
              
-             self.dcf_widget.set_data(price, net_income, shares)
+             self.dcf_widget.set_data(price, net_income, shares, intrinsic_value, data_source)
         except: pass
         
     def on_error(self, msg):

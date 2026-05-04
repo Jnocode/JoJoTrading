@@ -92,6 +92,21 @@ class DCFWidget(QWidget):
         self.btn_calc.clicked.connect(self.run_calculation)
         layout.addWidget(self.btn_calc)
         
+        # --- DB Baseline Reference ---
+        self.db_ref_frame = QFrame()
+        self.db_ref_frame.setStyleSheet("background-color: #1A2332; border: 1px solid #2196F3; border-radius: 5px; margin-top: 5px;")
+        self.db_ref_frame.setVisible(False)
+        db_ref_layout = QVBoxLayout(self.db_ref_frame)
+        db_ref_layout.setContentsMargins(8, 4, 8, 4)
+        
+        self.lbl_db_ref = QLabel("")
+        self.lbl_db_ref.setWordWrap(True)
+        self.lbl_db_ref.setStyleSheet("color: #90CAF9; font-size: 11px;")
+        self.lbl_db_ref.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        db_ref_layout.addWidget(self.lbl_db_ref)
+        
+        layout.addWidget(self.db_ref_frame)
+        
         # --- Result Area ---
         res_group = QFrame()
         res_group.setStyleSheet("background-color: #1E1E1E; border: 1px solid #444; border-radius: 5px; margin-top: 10px;")
@@ -126,11 +141,32 @@ class DCFWidget(QWidget):
         layout.addWidget(spin, row, col+1)
         return spin
 
-    def set_data(self, price, net_income=None, shares=None):
-        """Pre-fill data from analysis tab"""
+    def set_data(self, price, net_income=None, shares=None, intrinsic_value=None, data_source=None):
+        """Pre-fill data from analysis tab, using stocks.db as canonical source"""
         if price: self.spin_price.setValue(price)
         if net_income: self.spin_net_income.setValue(net_income) # Expecting Billions
         if shares: self.spin_shares.setValue(shares) # Expecting Billions
+        
+        # Show DB baseline reference if available
+        if intrinsic_value and intrinsic_value > 0 and price and price > 0:
+            db_return = (intrinsic_value / price - 1) * 100
+            source_label = '掃描資料庫' if data_source == 'auto_fetcher' else ('yfinance' if data_source else '未知')
+            
+            if db_return > 0:
+                color = '#4CAF50'
+                icon = '🟢'
+            else:
+                color = '#F44336'
+                icon = '🔴'
+            
+            self.lbl_db_ref.setText(
+                f"📊 掃描基準估值: <b style='color:#FFD700'>${intrinsic_value:,.0f}</b> "
+                f"| 潛在報酬: <b style='color:{color}'>{db_return:+.1f}%</b> {icon}\n"
+                f"<span style='color:#666; font-size:10px;'>資料源: {source_label}</span>"
+            )
+            self.db_ref_frame.setVisible(True)
+        else:
+            self.db_ref_frame.setVisible(False)
 
     def run_calculation(self):
         self.btn_calc.setEnabled(False)

@@ -225,6 +225,13 @@ class FinMindFetcher:
             print(f"❌ FinMind Price Fetch Error: {e}")
             return pd.DataFrame()
 
+    def get_eps_data(self, stock_code: str, quarters: int = 4) -> pd.DataFrame:
+        """
+        Placeholder for EPS data fetch to prevent AttributeError in data adapter.
+        """
+        return pd.DataFrame()
+
+
 if __name__ == "__main__":
     # Test
     f = FinMindFetcher()

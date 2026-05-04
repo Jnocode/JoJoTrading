@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QScrollArea, QFrame, QPushButton, QSplitter, 
-    QProgressBar, QGridLayout, QMessageBox, QSizePolicy, QComboBox
+    QProgressBar, QGridLayout, QMessageBox, QSizePolicy, QComboBox, QCheckBox
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QColor, QFont, QCursor, QPainter, QLinearGradient
@@ -543,8 +543,11 @@ class NewsTab(QWidget):
         stats_layout.addLayout(title_layout)
         
         self.lbl_summary = QLabel("👆 分析新聞後，點擊「📊 產出總覽」即可產生 AI 市場摘要")
+        self.lbl_summary.setTextFormat(Qt.MarkdownText)
+        self.lbl_summary.setOpenExternalLinks(True)
         self.lbl_summary.setWordWrap(True)
         self.lbl_summary.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.lbl_summary.setTextInteractionFlags(Qt.TextBrowserInteraction | Qt.TextSelectableByMouse)
         self.update_summary_style()
         
         summary_scroll = QScrollArea()
@@ -622,6 +625,19 @@ class NewsTab(QWidget):
         
         feed_header_layout.addStretch()
         
+        self.chk_instant_analyze = QCheckBox("即時分析")
+        self.chk_instant_analyze.setStyleSheet("color: #E0E0E0; font-weight: bold; margin-right: 10px;")
+        self.chk_instant_analyze.toggled.connect(self._on_instant_analyze_toggled)
+        try:
+            if self._db:
+                saved_instant = self._db.get_setting("news_instant_analyze", "False")
+                self.chk_instant_analyze.blockSignals(True)
+                self.chk_instant_analyze.setChecked(saved_instant == "True")
+                self.chk_instant_analyze.blockSignals(False)
+        except:
+            pass
+        feed_header_layout.addWidget(self.chk_instant_analyze)
+
         self.btn_analyze_all = QPushButton("⚡ 一鍵分析未處理")
         self.btn_analyze_all.setCursor(QCursor(Qt.PointingHandCursor))
         self.btn_analyze_all.setStyleSheet("background-color: #007ACC; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold;")
@@ -864,6 +880,10 @@ class NewsTab(QWidget):
         # Update dashboard if any cached items were loaded
         self._update_realtime_stats()
 
+        # Auto-analyze if Instant Analysis is enabled
+        if hasattr(self, 'chk_instant_analyze') and self.chk_instant_analyze.isChecked() and not self.is_loading_more:
+            self._analyze_all_pending()
+
     def _request_analyze(self, news_id):
         """On-demand: user clicked AI analyze on a specific card."""
         item_data = self.news_raw_data.get(news_id)
@@ -988,6 +1008,42 @@ class NewsTab(QWidget):
         # Full clear + re-fetch with new data source
         self._clear_all()
         self._auto_fetch()
+
+    def _on_instant_analyze_toggled(self, checked):
+        if checked:
+            provider = "Gemini"
+            try:
+                if self._db:
+                    provider = self._db.get_setting("ai_provider", "Gemini")
+            except:
+                pass
+            
+            if provider == "Ollama":
+                reply = QMessageBox.warning(
+                    self,
+                    "警告：本地模型運算",
+                    "您目前設定的 AI Provider 為本地模型 (Ollama)。\n"
+                    "開啟「即時分析」將會在每次抓取到新新聞時，自動調用本地資源進行運算。\n\n"
+                    "若新聞數量過多，可能會導致系統嚴重卡頓或資源耗盡。\n"
+                    "您確定要開啟此功能嗎？",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if reply == QMessageBox.No:
+                    self.chk_instant_analyze.blockSignals(True)
+                    self.chk_instant_analyze.setChecked(False)
+                    self.chk_instant_analyze.blockSignals(False)
+                    return
+                    
+        try:
+            if self._db:
+                self._db.set_setting("news_instant_analyze", str(checked))
+        except:
+            pass
+            
+        # If enabled and we have pending news, immediately analyze
+        if checked:
+            self._analyze_all_pending()
 
 
     def _clear_all(self):
