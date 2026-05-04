@@ -1,5 +1,4 @@
 # 核心依賴 - 生產環境必需
-streamlit>=1.45.0
 pandas>=2.0.0
 numpy>=1.24.0
 scipy>=1.10.0

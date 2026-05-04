@@ -23,7 +23,7 @@
 - ✅ **API 整合**：整合 3 個第三方 API（Shioaji、Yahoo Finance、DCF）
 - ✅ **量化分析**：DCF 估值模型、Monte Carlo 模擬、技術指標（SMA/EMA/RSI）
 - ✅ **策略回測**：支援 Pine Script 風格策略回測引擎
-- ✅ **Docker 部署**：容器化部署，運行穩定性 **99.9%**
+- ✅ **Portable 部署**：隨插即用的沙盒環境，完美隔離系統套件
 - ✅ **自動化測試**：40+ 單元測試，測試覆蓋率 **75%**
 - ✅ **CI/CD Pipeline**：GitHub Actions 自動化測試與部署
 
@@ -47,7 +47,7 @@
 ```mermaid
 graph TB
     subgraph "Frontend 前端層"
-        UI[Streamlit Web UI]
+        UI[PyQt6 Desktop UI]
     end
     
     subgraph "Core Services 核心服務層"
@@ -108,7 +108,7 @@ graph LR
     D --> I[Cache Manager]
     D --> J[Database]
     
-    C --> K[Streamlit UI]
+    C --> K[PyQt6 UI]
     
     style A fill:#ff6b6b
     style B fill:#4ecdc4
@@ -123,53 +123,18 @@ graph LR
 ### 📋 環境需求
 
 - **Python**: 3.11+
-- **Docker**: 20.10+ (選用)
-- **作業系統**: Windows / macOS / Linux
+- **作業系統**: Windows 10/11 (Desktop App) / macOS / Linux
 
-### ⚡ 方法 1：一鍵啟動（推薦）
+### 🖥️ 啟動桌面版 App (Windows 推薦)
 
-#### Windows
+最新開發的 Desktop App 提供流暢的 PyQt6 桌面體驗，並整合了完整的 AI 即時分析與技術線圖：
 
 ```cmd
-RUN_WEB_APP.bat
+desktop_app\run_portable.bat
 ```
-
-#### Linux / macOS
-
-```bash
-chmod +x start.sh
-./start.sh
-```
-
-瀏覽器會自動開啟 **<http://localhost:8501>**
+*(第一次啟動會自動建立隔離的 Python 環境並安裝相依套件)*
 
 ---
-
-### 🐳 方法 2：Docker 部署（生產環境）
-
-#### 1. 建立 Docker Image
-
-```bash
-docker build -t jojo-trading .
-```
-
-#### 2. 啟動容器
-
-```bash
-docker-compose up -d
-```
-
-#### 3. 訪問應用
-
-```
-http://localhost:8501
-```
-
-#### 4. 停止容器
-
-```bash
-docker-compose down
-```
 
 ---
 

@@ -1,0 +1,145 @@
+2026-02-24 01:55:47.619 | WARNING  | importlib._bootstrap:_call_with_frames_removed:241 - Optional: pip install shioaji[speed] or uv add shioaji --extra speed for better performance.
+D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trading\utils\ai_client.py:5: FutureWarning: 
+
+All support for the `google.generativeai` package has ended. It will no longer be receiving 
+updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
+See README for more details:
+
+https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
+
+  import google.generativeai as genai
+2026-02-24 01:55:54,790 - jojo_trading.core.news_controller - INFO - NewsController: Fetching top 5 news raw data.
+2026-02-24 01:55:54,790 - jojo_trading.data_sources.jin10 - INFO - Fetching Jin10 news from https://flash-api.jin10.com/get_flash_list with channel=-2
+2026-02-24 01:55:54,790 - jojo_trading.data_sources.jin10 - INFO - Fetching Jin10 news from https://flash-api.jin10.com/get_flash_list with channel=-2
+2026-02-24 01:55:55,641 - jojo_trading.data_sources.jin10 - INFO - Channel -2 returned empty. Retrying with channel 1 (All)...
+2026-02-24 01:55:55,641 - jojo_trading.data_sources.jin10 - INFO - Fetching Jin10 news from https://flash-api.jin10.com/get_flash_list with channel=1
+2026-02-24 01:55:55,641 - jojo_trading.data_sources.jin10 - INFO - Fetching Jin10 news from https://flash-api.jin10.com/get_flash_list with channel=1
+2026-02-24 01:55:56,236 - jojo_trading.core.news_controller - INFO - NewsController: Requesting AI impact analysis.
+2026-02-24 01:55:56,238 - jojo_trading.analysis.news_ai - INFO - Cache HIT but invalidated (Error detected) for 20260224014128825800
+2026-02-24 01:55:56,239 - jojo_trading.analysis.news_ai - INFO - Cache HIT but invalidated (Error detected) for 20260224014126231800
+2026-02-24 01:55:56,239 - jojo_trading.analysis.news_ai - INFO - Batch analyzing 5 items...
+2026-02-24 01:55:56,239 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:55:56,359 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 2s... (1/1)
+2026-02-24 01:55:58,548 - JoJoAI - ERROR - Rate limit exceeded on gemini-2.0-flash. Failing over.
+2026-02-24 01:55:58,562 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:55:58,671 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:55:58,701 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:55:59,179 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:55:59,194 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:55:59,266 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:55:59,266 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:55:59,266 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:55:59,309 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 2s... (1/1)
+2026-02-24 01:56:01,363 - JoJoAI - ERROR - Rate limit exceeded on gemini-2.0-flash. Failing over.
+2026-02-24 01:56:01,363 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:56:01,396 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:56:01,396 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:56:01,430 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:56:01,430 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:56:01,462 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:56:01,462 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:56:01,462 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:56:01,513 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 2s... (1/1)
+2026-02-24 01:56:03,555 - JoJoAI - ERROR - Rate limit exceeded on gemini-2.0-flash. Failing over.
+2026-02-24 01:56:03,556 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:56:03,589 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:56:03,590 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:56:03,619 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:56:03,619 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:56:03,650 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:56:03,651 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:56:03,651 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:56:03,690 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 2s... (1/1)
+2026-02-24 01:56:05,724 - JoJoAI - ERROR - Rate limit exceeded on gemini-2.0-flash. Failing over.
+2026-02-24 01:56:05,724 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:56:05,756 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:56:05,756 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:56:05,791 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:56:05,792 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:56:05,825 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:56:05,825 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:56:05,825 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:56:05,863 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 2s... (1/1)
+2026-02-24 01:56:07,903 - JoJoAI - ERROR - Rate limit exceeded on gemini-2.0-flash. Failing over.
+2026-02-24 01:56:07,904 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:56:07,931 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:56:07,931 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:56:07,959 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:56:07,960 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:56:07,993 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:56:07,993 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:56:07,998 - jojo_trading.data_sources.news_cache - INFO - Cached analysis for news 20260224015335314800
+2026-02-24 01:56:08,003 - jojo_trading.data_sources.news_cache - INFO - Cached analysis for news 20260224015302070800
+2026-02-24 01:56:08,009 - jojo_trading.data_sources.news_cache - INFO - Cached analysis for news 20260224015251428800
+2026-02-24 01:56:08,016 - jojo_trading.data_sources.news_cache - INFO - Cached analysis for news 20260224014128825800
+2026-02-24 01:56:08,022 - jojo_trading.data_sources.news_cache - INFO - Cached analysis for news 20260224014126231800
+2026-02-24 01:56:08,022 - jojo_trading.core.news_controller - INFO - NewsController: Fetching price snapshots for affected stocks.
+2026-02-24 01:57:43,505 - jojo_trading.core.news_controller - INFO - NewsController: Fetching top 5 news raw data.
+2026-02-24 01:57:43,505 - jojo_trading.data_sources.jin10 - INFO - Fetching Jin10 news from https://flash-api.jin10.com/get_flash_list with channel=-2
+2026-02-24 01:57:43,505 - jojo_trading.data_sources.jin10 - INFO - Fetching Jin10 news from https://flash-api.jin10.com/get_flash_list with channel=-2
+2026-02-24 01:57:44,137 - jojo_trading.data_sources.jin10 - INFO - Channel -2 returned empty. Retrying with channel 1 (All)...
+2026-02-24 01:57:44,137 - jojo_trading.data_sources.jin10 - INFO - Fetching Jin10 news from https://flash-api.jin10.com/get_flash_list with channel=1
+2026-02-24 01:57:44,137 - jojo_trading.data_sources.jin10 - INFO - Fetching Jin10 news from https://flash-api.jin10.com/get_flash_list with channel=1
+2026-02-24 01:57:44,539 - jojo_trading.core.news_controller - INFO - NewsController: Requesting AI impact analysis.
+2026-02-24 01:57:44,540 - jojo_trading.analysis.news_ai - INFO - Cache HIT but invalidated (Error detected) for 20260224015335314800
+2026-02-24 01:57:44,541 - jojo_trading.analysis.news_ai - INFO - Cache HIT but invalidated (Error detected) for 20260224015302070800
+2026-02-24 01:57:44,541 - jojo_trading.analysis.news_ai - INFO - Cache HIT but invalidated (Error detected) for 20260224015251428800
+2026-02-24 01:57:44,542 - jojo_trading.analysis.news_ai - INFO - Cache HIT but invalidated (Error detected) for 20260224014128825800
+2026-02-24 01:57:44,542 - jojo_trading.analysis.news_ai - INFO - Cache HIT but invalidated (Error detected) for 20260224014126231800
+2026-02-24 01:57:44,542 - jojo_trading.analysis.news_ai - INFO - Batch analyzing 5 items...
+2026-02-24 01:57:44,542 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:57:44,596 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 2s... (1/1)
+2026-02-24 01:57:46,640 - JoJoAI - ERROR - Rate limit exceeded on gemini-2.0-flash. Failing over.
+2026-02-24 01:57:46,640 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:57:46,670 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:46,671 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:57:46,701 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:46,701 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:57:46,727 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:46,727 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:57:46,727 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:57:46,761 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 2s... (1/1)
+2026-02-24 01:57:48,792 - JoJoAI - ERROR - Rate limit exceeded on gemini-2.0-flash. Failing over.
+2026-02-24 01:57:48,792 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:57:48,821 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:48,821 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:57:48,849 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:48,850 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:57:48,879 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:48,879 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:57:48,879 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:57:48,920 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 2s... (1/1)
+2026-02-24 01:57:50,949 - JoJoAI - ERROR - Rate limit exceeded on gemini-2.0-flash. Failing over.
+2026-02-24 01:57:50,949 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:57:50,974 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:50,974 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:57:51,004 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:51,004 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:57:51,034 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:51,034 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:57:51,034 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:57:51,068 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 2s... (1/1)
+2026-02-24 01:57:53,101 - JoJoAI - ERROR - Rate limit exceeded on gemini-2.0-flash. Failing over.
+2026-02-24 01:57:53,101 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:57:53,122 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:53,122 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:57:53,159 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:53,159 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:57:53,190 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:53,190 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:57:53,190 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:57:53,224 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 2s... (1/1)
+2026-02-24 01:57:55,266 - JoJoAI - ERROR - Rate limit exceeded on gemini-2.0-flash. Failing over.
+2026-02-24 01:57:55,266 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:57:55,291 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:55,291 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:57:55,317 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:55,317 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:57:55,341 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:57:55,341 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:57:55,348 - jojo_trading.data_sources.news_cache - INFO - Cached analysis for news 20260224015335314800
+2026-02-24 01:57:55,354 - jojo_trading.data_sources.news_cache - INFO - Cached analysis for news 20260224015302070800
+2026-02-24 01:57:55,359 - jojo_trading.data_sources.news_cache - INFO - Cached analysis for news 20260224015251428800
+2026-02-24 01:57:55,365 - jojo_trading.data_sources.news_cache - INFO - Cached analysis for news 20260224014128825800
+2026-02-24 01:57:55,372 - jojo_trading.data_sources.news_cache - INFO - Cached analysis for news 20260224014126231800
+2026-02-24 01:57:55,372 - jojo_trading.core.news_controller - INFO - NewsController: Fetching price snapshots for affected stocks.

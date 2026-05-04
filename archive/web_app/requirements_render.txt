@@ -1,0 +1,37 @@
+# 🚀 Render.com 專用 - 精簡依賴檔案
+# 解決 ta 版本衝突問題
+
+# 核心框架
+streamlit==1.45.0
+pandas==2.0.3
+numpy==1.24.4
+
+# 技術分析 - 鎖定版本避免衝突
+ta==0.5.25
+
+# 數據源
+yfinance==0.2.33
+FinMind==1.8.0
+requests==2.31.0
+
+# 圖表
+plotly==5.18.0
+matplotlib==3.7.5
+seaborn==0.12.2
+
+# 工具
+python-dotenv==1.0.0
+python-dateutil==2.8.2
+scipy==1.10.1
+
+# 資料處理
+openpyxl==3.1.2
+beautifulsoup4==4.12.3
+lxml==4.9.4
+
+# 網路
+urllib3==2.0.7
+certifi==2023.11.17
+
+# AI 分析 (新聞模組需要)
+google-generativeai==0.8.5

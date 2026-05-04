@@ -1,0 +1,24 @@
+agents:
+  Market_Watcher:
+    role: "監控台指期 (TAIEX) 走勢與成交量"
+    provider: ollama
+    model: qwen3-coder:latest
+    tools:
+      - web.search
+    frequency: High
+    max_retries: 3
+    retry_delay: 30
+
+  Strategy_Dev:
+    role: "根據 OpenClaw 策略引擎撰寫交易邏輯"
+    provider: google
+    model: gemini-3-pro-high
+    max_retries: 2
+    retry_delay: 20
+
+  Risk_Manager:
+    role: "審核代碼安全性與回測數據"
+    provider: google
+    model: gemini-3-pro-high
+    permissions:
+      - read-only

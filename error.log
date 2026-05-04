@@ -1,0 +1,114 @@
+2026-02-24 01:37:45.736 | WARNING  | importlib._bootstrap:_call_with_frames_removed:241 - Optional: pip install shioaji[speed] or uv add shioaji --extra speed for better performance.
+D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trading\utils\ai_client.py:5: FutureWarning: 
+
+All support for the `google.generativeai` package has ended. It will no longer be receiving 
+updates or bug fixes. Please switch to the `google.genai` package as soon as possible.
+See README for more details:
+
+https://github.com/google-gemini/deprecated-generative-ai-python/blob/main/README.md
+
+  import google.generativeai as genai
+Traceback (most recent call last):
+  File "D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trader\ui\dashboard_tab.py", line 192, in refresh_data
+    if not self.market_worker:
+           ^^^^^^^^^^^^^^^^^^
+AttributeError: 'DashboardTab' object has no attribute 'market_worker'
+2026-02-24 01:37:52,282 - jojo_trading.core.news_controller - INFO - NewsController: Fetching top 5 news raw data.
+2026-02-24 01:37:52,282 - jojo_trading.data_sources.jin10 - INFO - Fetching Jin10 news from https://flash-api.jin10.com/get_flash_list with channel=-2
+2026-02-24 01:37:52,282 - jojo_trading.data_sources.jin10 - INFO - Fetching Jin10 news from https://flash-api.jin10.com/get_flash_list with channel=-2
+2026-02-24 01:37:52,977 - jojo_trading.data_sources.jin10 - INFO - Channel -2 returned empty. Retrying with channel 1 (All)...
+2026-02-24 01:37:52,977 - jojo_trading.data_sources.jin10 - INFO - Fetching Jin10 news from https://flash-api.jin10.com/get_flash_list with channel=1
+2026-02-24 01:37:52,978 - jojo_trading.data_sources.jin10 - INFO - Fetching Jin10 news from https://flash-api.jin10.com/get_flash_list with channel=1
+2026-02-24 01:37:53,476 - jojo_trading.core.news_controller - INFO - NewsController: Requesting AI impact analysis.
+2026-02-24 01:37:53,479 - jojo_trading.analysis.news_ai - INFO - Batch analyzing 5 items...
+2026-02-24 01:37:53,479 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:37:53,552 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 5s... (1/3)
+2026-02-24 01:37:58,589 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 10s... (2/3)
+Traceback (most recent call last):
+  File "D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trader\ui\dashboard_tab.py", line 192, in refresh_data
+    if not self.market_worker:
+           ^^^^^^^^^^^^^^^^^^
+AttributeError: 'DashboardTab' object has no attribute 'market_worker'
+2026-02-24 01:38:08,638 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 20s... (3/3)
+Traceback (most recent call last):
+  File "D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trader\ui\dashboard_tab.py", line 192, in refresh_data
+    if not self.market_worker:
+           ^^^^^^^^^^^^^^^^^^
+AttributeError: 'DashboardTab' object has no attribute 'market_worker'
+Traceback (most recent call last):
+  File "D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trader\ui\dashboard_tab.py", line 192, in refresh_data
+    if not self.market_worker:
+           ^^^^^^^^^^^^^^^^^^
+AttributeError: 'DashboardTab' object has no attribute 'market_worker'
+2026-02-24 01:38:28,638 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:38:28,663 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:38:28,663 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:38:28,700 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:38:28,700 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:38:28,737 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:38:28,737 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:38:28,737 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:38:28,780 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 5s... (1/3)
+Traceback (most recent call last):
+  File "D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trader\ui\dashboard_tab.py", line 192, in refresh_data
+    if not self.market_worker:
+           ^^^^^^^^^^^^^^^^^^
+AttributeError: 'DashboardTab' object has no attribute 'market_worker'
+2026-02-24 01:38:33,815 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 10s... (2/3)
+Traceback (most recent call last):
+  File "D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trader\ui\dashboard_tab.py", line 192, in refresh_data
+    if not self.market_worker:
+           ^^^^^^^^^^^^^^^^^^
+AttributeError: 'DashboardTab' object has no attribute 'market_worker'
+2026-02-24 01:38:43,866 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 20s... (3/3)
+Traceback (most recent call last):
+  File "D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trader\ui\dashboard_tab.py", line 192, in refresh_data
+    if not self.market_worker:
+           ^^^^^^^^^^^^^^^^^^
+AttributeError: 'DashboardTab' object has no attribute 'market_worker'
+Traceback (most recent call last):
+  File "D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trader\ui\dashboard_tab.py", line 192, in refresh_data
+    # 0. Market Data
+           ^^^^^^^^^^
+AttributeError: 'DashboardTab' object has no attribute 'market_worker'
+2026-02-24 01:39:03,867 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:39:03,905 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:39:03,905 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:39:03,935 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:39:03,936 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:39:03,975 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:39:03,975 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:39:03,975 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:39:04,015 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 5s... (1/3)
+2026-02-24 01:39:09,057 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 10s... (2/3)
+Traceback (most recent call last):
+  File "D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trader\ui\dashboard_tab.py", line 192, in refresh_data
+    # 0. Market Data
+           ^^^^^^^^^^
+AttributeError: 'DashboardTab' object has no attribute 'market_worker'
+2026-02-24 01:39:19,103 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 20s... (3/3)
+Traceback (most recent call last):
+  File "D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trader\ui\dashboard_tab.py", line 192, in refresh_data
+    # 0. Market Data
+           ^^^^^^^^^^
+AttributeError: 'DashboardTab' object has no attribute 'market_worker'
+Traceback (most recent call last):
+  File "D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trader\ui\dashboard_tab.py", line 192, in refresh_data
+    # 0. Market Data
+           ^^^^^^^^^^
+AttributeError: 'DashboardTab' object has no attribute 'market_worker'
+2026-02-24 01:39:39,103 - JoJoAI - INFO - Attempting with model: gemini-1.5-flash-latest
+2026-02-24 01:39:39,140 - JoJoAI - ERROR - Failed with gemini-1.5-flash-latest: 404 models/gemini-1.5-flash-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:39:39,140 - JoJoAI - INFO - Attempting with model: gemini-1.5-pro-latest
+2026-02-24 01:39:39,164 - JoJoAI - ERROR - Failed with gemini-1.5-pro-latest: 404 models/gemini-1.5-pro-latest is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:39:39,164 - JoJoAI - INFO - Attempting with model: gemini-pro-vision
+2026-02-24 01:39:39,203 - JoJoAI - ERROR - Failed with gemini-pro-vision: 404 models/gemini-pro-vision is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+2026-02-24 01:39:39,203 - jojo_trading.analysis.news_ai - ERROR - AI Client Error: Error: All AI models failed to generate response.
+2026-02-24 01:39:39,203 - JoJoAI - INFO - Attempting with model: gemini-2.0-flash
+2026-02-24 01:39:39,246 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 5s... (1/3)
+Traceback (most recent call last):
+  File "D:\Workspace\03.Dev_Projects\trading\jojo_trading\src\jojo_trader\ui\dashboard_tab.py", line 192, in refresh_data
+    # 0. Market Data
+           ^^^^^^^^^^
+AttributeError: 'DashboardTab' object has no attribute 'market_worker'
+2026-02-24 01:39:44,302 - JoJoAI - WARNING - Rate limit hit on gemini-2.0-flash. Retrying in 10s... (2/3)

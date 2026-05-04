@@ -7,8 +7,14 @@ from typing import List, Dict, Any, Optional
 class WatchlistManager:
     """管理自選股清單 (SQLite)"""
     
-    def __init__(self, db_path: str = "src/jojo_trading/data/watchlist.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str = None):
+        if db_path is None:
+            core_dir = os.path.dirname(os.path.abspath(__file__))
+            data_dir = os.path.join(os.path.dirname(core_dir), "data")
+            os.makedirs(data_dir, exist_ok=True)
+            self.db_path = os.path.join(data_dir, "watchlist.db")
+        else:
+            self.db_path = db_path
         self._ensure_db_dir()
         self._init_db()
         

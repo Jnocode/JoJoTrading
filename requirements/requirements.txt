@@ -1,0 +1,4 @@
+# JoJo Trading 主要依賴檔案
+# 這個檔案包含所有基礎依賴，其他環境請使用 requirements/ 目錄下的特定檔案
+
+-r requirements/base.txt
