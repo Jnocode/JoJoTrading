@@ -5,6 +5,7 @@ Analysis Controller
 """
 
 import logging
+import pandas as pd
 from typing import Dict, Any, Optional, Tuple
 from jojo_trading.utils.ai_client import AIClient
 from jojo_trading.analysis.backtest.data_adapter import BacktestDataAdapter
@@ -143,7 +144,7 @@ class AnalysisController:
         # 4. Generate AI Diagnosis
         # 我們只取最近 5 天的資料給 AI 看趨勢，避免 Token 過多
         recent_df = df.tail(5).copy()
-        import pandas as pd
+        # pandas imported at module level
         if 'date' in recent_df.columns:
             date_strs = pd.to_datetime(recent_df['date']).dt.strftime('%Y-%m-%d').tolist()
         else:
