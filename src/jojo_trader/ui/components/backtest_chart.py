@@ -12,6 +12,7 @@ except ImportError:
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
+from PySide6.QtGui import QColor
 import tempfile
 import os
 
@@ -35,6 +36,8 @@ class BacktestChart(QWidget):
         if WEB_ENGINE_AVAILABLE:
             try:
                 self.web_view = QWebEngineView()
+                self.web_view.page().setBackgroundColor(QColor('#1E1E1E'))
+                self.web_view.setHtml('<body style="background-color: #1E1E1E; color: #888; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: sans-serif;">等待載入技術線圖... (Waiting for chart data)</body>')
                 self.layout.addWidget(self.web_view)
             except Exception as e:
                 print(f"⚠️ WebEngineView initialization failed: {e}")
@@ -111,7 +114,9 @@ class BacktestChart(QWidget):
             high=df['high'],
             low=df['low'],
             close=df['close'],
-            name='K-Line'
+            name='K-Line',
+            increasing_line_color='#FF3333', increasing_fillcolor='#FF3333',
+            decreasing_line_color='#00FF00', decreasing_fillcolor='#00FF00'
         ), row=1, col=1)
 
         # 2. Moving Averages
@@ -156,10 +161,11 @@ class BacktestChart(QWidget):
             ), row=1, col=1)
 
         # 4. Volume
+        vol_colors = ['#FF3333' if c >= o else '#00FF00' for c, o in zip(df['close'], df['open'])]
         fig.add_trace(go.Bar(
             x=df['date'], y=df['volume'],
             name='Volume',
-            marker_color='#555555'
+            marker_color=vol_colors
         ), row=2, col=1)
 
         # Layout Settings
@@ -173,8 +179,8 @@ class BacktestChart(QWidget):
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
 
-        # Save to temp HTML and Load
-        raw_html = fig.to_html(include_plotlyjs='cdn')
+        # Save to temp HTML and Load (Embed Plotly JS to avoid blank screens due to slow CDN)
+        raw_html = fig.to_html(include_plotlyjs=True)
         
         if self.web_view:
              self.web_view.setHtml(raw_html)
