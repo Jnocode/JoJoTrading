@@ -119,8 +119,8 @@ class ScreenerTab(QWidget):
                 ("股價小於 50 且有潛在報酬", True),
                 ("MA5 上穿 MA20 (黃金交叉)", True),
                 ("MA5 下穿 MA20 (死亡交叉)", True),
-                ("🔒 股價站上季線", False),
-                ("🔒 KD 黃金交叉", False),
+                ("股價站上季線", True),
+                ("KD 黃金交叉", True),
                 ("成交量突增", True),
             ]),
             ("🏦 籌碼面", "#81C784", [
