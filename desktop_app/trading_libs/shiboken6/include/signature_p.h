@@ -12,23 +12,22 @@ extern "C" {
 
 struct safe_globals_struc {
     // init part 1: get arg_dict
-    PyObject *helper_module = nullptr;
-    PyObject *arg_dict = nullptr;
-    PyObject *map_dict = nullptr;
-    PyObject *value_dict = nullptr;       // for writing signatures
-    PyObject *feature_dict = nullptr;     // registry for PySide.support.__feature__
-    PyObject *empty_dict = nullptr;
+    PyObject *helper_module;
+    PyObject *arg_dict;
+    PyObject *map_dict;
+    PyObject *value_dict;       // for writing signatures
+    PyObject *feature_dict;     // registry for PySide.support.__feature__
     // init part 2: run module
-    PyObject *pyside_type_init_func = nullptr;
-    PyObject *create_signature_func = nullptr;
-    PyObject *seterror_argument_func = nullptr;
-    PyObject *make_helptext_func = nullptr;
-    PyObject *finish_import_func = nullptr;
-    PyObject *feature_import_func = nullptr;
-    PyObject *feature_imported_func = nullptr;
+    PyObject *pyside_type_init_func;
+    PyObject *create_signature_func;
+    PyObject *seterror_argument_func;
+    PyObject *make_helptext_func;
+    PyObject *finish_import_func;
+    PyObject *feature_import_func;
+    PyObject *feature_imported_func;
 };
 
-safe_globals_struc *signatureGlobals();
+extern safe_globals_struc *pyside_globals;
 extern PyMethodDef signature_methods[];
 
 void init_shibokensupport_module(void);

@@ -221,7 +221,8 @@ def install_dependencies():
     # ──────────────────────────────────────────────
     # 映射: pip 套件名 → Python import 名 (只列不同的)
     IMPORT_MAP = {
-        "PySide6": "PySide6",
+        # PySide6 目錄存在不代表 Qt DLL 完整；必須實際載入 QtWidgets。
+        "PySide6": "PySide6.QtWidgets",
         "pandas": "pandas",
         "numpy": "numpy",
         "plotly": "plotly",
@@ -249,8 +250,13 @@ def install_dependencies():
 
     missing_packages = []
     for pip_name, import_name in IMPORT_MAP.items():
+        if pip_name == "PySide6":
+            import_statement = "from PySide6.QtWidgets import QApplication"
+        else:
+            import_statement = f"import {import_name}"
+
         result = subprocess.run(
-            [str(LOCAL_PYTHON), "-c", f"import {import_name}"],
+            [str(LOCAL_PYTHON), "-c", import_statement],
             capture_output=True,
             env=check_env,
             creationflags=subprocess.CREATE_NO_WINDOW,
@@ -388,16 +394,31 @@ def health_check():
         all_ok = False
 
     # 2. trading_libs
-    if (LIBS_DIR / "PySide6").exists():
-        log("✅ PySide6: 已安裝")
+    check_env = os.environ.copy()
+    check_env["PYTHONPATH"] = str(LIBS_DIR)
+
+    pyside_check = subprocess.run(
+        [str(LOCAL_PYTHON), "-c", "from PySide6.QtWidgets import QApplication"],
+        capture_output=True,
+        env=check_env,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    if pyside_check.returncode == 0:
+        log("✅ PySide6: QtWidgets 可載入")
     else:
-        log("❌ PySide6: 未安裝")
+        log("❌ PySide6: QtWidgets 載入失敗，請執行 --deps-check 修復")
         all_ok = False
 
-    if (LIBS_DIR / "shioaji").exists():
+    shioaji_check = subprocess.run(
+        [str(LOCAL_PYTHON), "-c", "import shioaji"],
+        capture_output=True,
+        env=check_env,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    if shioaji_check.returncode == 0:
         log("✅ shioaji: 已安裝")
     else:
-        log("❌ shioaji: 未安裝")
+        log("❌ shioaji: 未安裝或無法載入")
         all_ok = False
 
     # 3. .NET

@@ -15,6 +15,7 @@ import pandas as pd
 from PySide6.QtGui import QColor
 import tempfile
 import os
+import re
 
 class BacktestChart(QWidget):
     def __init__(self):
@@ -119,9 +120,10 @@ class BacktestChart(QWidget):
             decreasing_line_color='#00FF00', decreasing_fillcolor='#00FF00'
         ), row=1, col=1)
 
-        # 2. Moving Averages
+        # 2. Price Overlay Indicators
+        # 僅繪製真正價格相關技術指標，避免 Dealer_Buy 等籌碼欄位拉爆價格軸。
         colors = ['orange', 'purple', 'blue', 'brown']
-        ma_cols = [c for c in df.columns if c.startswith('MA') or c.startswith('D')]
+        ma_cols = self._get_price_overlay_columns(df)
         for idx, col in enumerate(ma_cols):
             fig.add_trace(go.Scatter(
                 x=df['date'], 
@@ -176,8 +178,12 @@ class BacktestChart(QWidget):
             xaxis_rangeslider_visible=False,
             height=600,
             margin=dict(l=10, r=10, t=30, b=10),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            hovermode='x unified'
         )
+
+        fig.update_yaxes(title_text='Price', row=1, col=1)
+        fig.update_yaxes(title_text='Volume', row=2, col=1)
 
         # Save to temp HTML and Load (Embed Plotly JS to avoid blank screens due to slow CDN)
         raw_html = fig.to_html(include_plotlyjs=True)
@@ -198,3 +204,28 @@ class BacktestChart(QWidget):
              self.web_view.setUrl(QUrl.fromLocalFile(temp_filepath))
         else:
              print("Skipping Chart Render: WebEngine not available")
+
+    def _get_price_overlay_columns(self, df: pd.DataFrame) -> list[str]:
+        """
+        挑出可疊在價格圖上的技術指標欄位。
+        避免把 Foreign_Buy / Dealer_Buy / Revenue 等非價格欄位畫進來。
+        """
+        indicator_patterns = [
+            r"^MA\d+$",
+            r"^EMA\d+$",
+            r"^SMA\d+$",
+            r"^WMA\d+$",
+            r"^VWAP$",
+            r"^BB_(UPPER|MID|LOWER)$",
+            r"^(DIF|DEA|MACD)$"
+        ]
+
+        overlays = []
+        for col in df.columns:
+            if col in {'date', 'open', 'high', 'low', 'close', 'volume'}:
+                continue
+
+            if any(re.match(pattern, col, flags=re.IGNORECASE) for pattern in indicator_patterns):
+                overlays.append(col)
+
+        return overlays

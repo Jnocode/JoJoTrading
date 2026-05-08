@@ -18,6 +18,7 @@ class Jin10MCPClient:
             "Authorization": "Bearer sk-6CW6gbuJOisYpoe4eqCSn_NGiiy1c72HqhSo98WYz0s"
         }
         self.session_id = None
+        self._is_offline = False
         self._initialize_session()
 
     def _initialize_session(self):
@@ -54,6 +55,9 @@ class Jin10MCPClient:
             }, headers=self.headers, timeout=5)
             
             logger.info("Jin10 MCP session initialized successfully.")
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            logger.warning(f"Network error during Jin10 MCP initialization: {e}. Enabling OFFLINE MOCK mode.")
+            self._is_offline = True
         except Exception as e:
             logger.error(f"Failed to initialize Jin10 MCP session: {e}")
 
@@ -132,6 +136,8 @@ class Jin10MCPClient:
         """
         Fetch latest flash news (backward compatible).
         """
+        if self._is_offline:
+            return self._generate_mock_news(limit)
         try:
             logger.info(f"Fetching Jin10 news via MCP: list_flash (limit={limit})")
             all_news = []
@@ -169,6 +175,8 @@ class Jin10MCPClient:
         Fetch curated articles (list_news). These are editor-selected important items.
         Normalizes fields to match flash news structure for downstream compatibility.
         """
+        if self._is_offline:
+            return self._generate_mock_news(limit, is_article=True)
         try:
             logger.info("Fetching Jin10 articles via MCP: list_news")
             data = self._call_tool("list_news", {})
@@ -192,6 +200,8 @@ class Jin10MCPClient:
         """
         Fetch all news items occurring after since_dt.
         """
+        if self._is_offline:
+            return self._generate_mock_news(10)
         all_news = []
         cursor = None
         

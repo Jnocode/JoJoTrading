@@ -6,15 +6,11 @@
 
 #include "sbkpython.h"
 #include "shibokenmacros.h"
+#include "autodecref.h"
 
 #include <iosfwd>
 
 #define SBK_UNUSED(x)   (void)(x);
-
-extern "C"
-{
-struct SbkObject;
-}
 
 namespace Shiboken
 {

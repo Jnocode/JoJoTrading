@@ -52,7 +52,7 @@ def test_dcf_filtering():
         print(f"❌ DCF篩選測試失敗: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False
 
 def test_trading_system():
     """測試交易系統功能"""
@@ -104,7 +104,7 @@ def test_trading_system():
         print(f"❌ 交易系統測試失敗: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False
 
 def main():
     """主測試函數"""
@@ -136,7 +136,7 @@ def main():
     else:
         print("\n⚠️  系統需要進一步檢查")
     
-    return dcf_test and trading_test
+    assert dcf_test and trading_test
 
 if __name__ == "__main__":
     main()

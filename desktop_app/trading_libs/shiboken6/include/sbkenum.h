@@ -18,6 +18,12 @@ LIBSHIBOKEN_API void init_enum();
 struct SbkConverter;
 struct SbkEnumType;
 
+struct SbkEnumTypePrivate
+{
+    SbkConverter *converter;
+    SbkConverter *flagsConverter;
+};
+
 /// PYSIDE-1735: Pass on the Python enum/flag information.
 LIBSHIBOKEN_API void initEnumFlagsDict(PyTypeObject *type);
 
@@ -30,7 +36,7 @@ LIBSHIBOKEN_API int enumIsFlag(PyObject *ob_enum);
 
 namespace Shiboken::Enum {
 
-enum : uint8_t {
+enum : int {
     ENOPT_OLD_ENUM        = 0x00,   // PySide 6.6: no longer supported
     ENOPT_NEW_ENUM        = 0x01,
     ENOPT_INHERIT_INT     = 0x02,
@@ -59,9 +65,6 @@ LIBSHIBOKEN_API PyObject *getEnumItemFromValue(PyTypeObject *enumType,
 /// Sets the enum/flag's type converter.
 LIBSHIBOKEN_API void setTypeConverter(PyTypeObject *type, SbkConverter *converter,
                                       SbkConverter *flagsConverter = nullptr);
-
-LIBSHIBOKEN_API SbkConverter *getConverter(SbkEnumType *type);
-LIBSHIBOKEN_API SbkConverter *getFlagsConverter(SbkEnumType *type);
 
 /// Creating Python enums for different types.
 LIBSHIBOKEN_API PyTypeObject *createPythonEnum(PyObject *module,

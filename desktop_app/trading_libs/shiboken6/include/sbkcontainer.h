@@ -8,6 +8,7 @@
 #include "shibokenmacros.h"
 #include "shibokenbuffer.h"
 
+#include <algorithm>
 #include <iterator>
 #include <optional>
 #include <utility>
@@ -49,26 +50,11 @@ public:
     enum { value = sizeof(test<T>(nullptr)) == sizeof(YesType) };
 };
 
-// PYSIDE-3259 Handling of the std::vector<bool> optimization for providing
-// a pointer for the SbkConverter. Use const-ref for the standard case to
-// avoid copies and instantiate a bool in case of std::vector<bool>.
-template <typename T>
-struct ShibokenContainerStdVectorValueType
-{
-    using Type = const T &;
-};
-
-template <>
-struct ShibokenContainerStdVectorValueType<bool>
-{
-    using Type = bool;
-};
-
 class ShibokenSequenceContainerPrivateBase
 {
 public:
     static constexpr const char *msgModifyConstContainer =
-        "libshiboken: Attempt to modify a constant container.";
+        "Attempt to modify a constant container.";
 
 protected:
     LIBSHIBOKEN_API static ShibokenContainer *allocContainer(PyTypeObject *subtype);
@@ -128,7 +114,7 @@ public:
     {
         auto *d = get(self);
         if (i < 0 || i >= Py_ssize_t(d->m_list->size()))
-            return PyErr_Format(PyExc_IndexError, "libshiboken: index out of bounds");
+            return PyErr_Format(PyExc_IndexError, "index out of bounds");
         auto it = std::cbegin(*d->m_list);
         std::advance(it, i);
         return ShibokenContainerValueConverter<value_type>::convertValueToPython(*it);
@@ -138,7 +124,7 @@ public:
     {
         auto *d = get(self);
         if (i < 0 || i >= Py_ssize_t(d->m_list->size())) {
-            PyErr_SetString(PyExc_IndexError, "libshiboken: index out of bounds");
+            PyErr_SetString(PyExc_IndexError, "index out of bounds");
             return -1;
         }
         auto it = std::begin(*d->m_list);
@@ -154,7 +140,7 @@ public:
     {
         auto *d = get(self);
         if (!ShibokenContainerValueConverter<value_type>::checkValue(pyArg))
-            return PyErr_Format(PyExc_TypeError, "libshiboken: wrong type passed to append.");
+            return PyErr_Format(PyExc_TypeError, "wrong type passed to append.");
         if (d->m_const)
             return PyErr_Format(PyExc_TypeError, msgModifyConstContainer);
 
@@ -169,7 +155,7 @@ public:
     {
         auto *d = get(self);
         if (!ShibokenContainerValueConverter<value_type>::checkValue(pyArg))
-            return PyErr_Format(PyExc_TypeError, "libshiboken: wrong type passed to append.");
+            return PyErr_Format(PyExc_TypeError, "wrong type passed to append.");
         if (d->m_const)
             return PyErr_Format(PyExc_TypeError, msgModifyConstContainer);
 
@@ -215,7 +201,7 @@ public:
     {
         auto *d = get(self);
         if (PyLong_Check(pyArg) == 0)
-            return PyErr_Format(PyExc_TypeError, "libshiboken: wrong type passed to reserve().");
+            return PyErr_Format(PyExc_TypeError, "wrong type passed to reserve().");
         if (d->m_const)
             return PyErr_Format(PyExc_TypeError, msgModifyConstContainer);
 
@@ -223,8 +209,7 @@ public:
             const Py_ssize_t size = PyLong_AsSsize_t(pyArg);
             d->m_list->reserve(size);
         } else {
-            return PyErr_Format(PyExc_TypeError,
-                                "libshiboken: Container does not support reserve().");
+            return PyErr_Format(PyExc_TypeError, "Container does not support reserve().");
         }
 
         Py_RETURN_NONE;
@@ -249,7 +234,7 @@ public:
             const Py_ssize_t size = sizeof(value_type) * d->m_list->size();
             result = Shiboken::Buffer::newObject(data, size, Shiboken::Buffer::ReadWrite);
         } else  {
-            PyErr_SetString(PyExc_TypeError, "libshiboken: Container does not support data().");
+            PyErr_SetString(PyExc_TypeError, "Container does not support data().");
         }
         return result;
     }
@@ -263,7 +248,7 @@ public:
             const Py_ssize_t size = sizeof(value_type) * d->m_list->size();
             result = Shiboken::Buffer::newObject(data, size);
         } else  {
-            PyErr_SetString(PyExc_TypeError, "libshiboken: Container does not support constData().");
+            PyErr_SetString(PyExc_TypeError, "Container does not support constData().");
         }
         return result;
     }

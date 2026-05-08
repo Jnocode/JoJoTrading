@@ -233,3 +233,171 @@ class NewsAnalyzer:
             logger.error(f"Market Summarization Failed: {e}")
             return "無法產生總覽報告。"
 
+    def summarize_market_with_stats(self, news_items: List[Dict], stats_items: List[Dict] = None) -> Dict[str, Any]:
+        """
+        Produce a market overview and dashboard stats in one AI call.
+
+        This supports fast-refresh mode: pending raw news can update the
+        sentiment distribution without waiting for per-item analysis.
+        """
+        stats_items = news_items if stats_items is None else stats_items
+        if not news_items:
+            return {
+                "summary": "目前無足夠的新聞資料進行大盤總結。",
+                "stats": self._empty_dashboard_stats(),
+                "stats_valid": True,
+            }
+
+        news_lines = []
+        total_items = min(len(news_items), 15)
+        for i, item in enumerate(news_items[:total_items]):
+            analysis = item.get("analysis", {})
+            text = (
+                analysis.get("summary")
+                or item.get("data", {}).get("content")
+                or item.get("content")
+                or ""
+            )
+            if text:
+                news_lines.append(f"[{i + 1}] {text}")
+
+        stats_lines = []
+        total_stats_items = min(len(stats_items), 15)
+        for i, item in enumerate(stats_items[:total_stats_items]):
+            text = (
+                item.get("data", {}).get("content")
+                or item.get("content")
+                or item.get("analysis", {}).get("summary")
+                or ""
+            )
+            if text:
+                stats_lines.append(f"[{i + 1}] {text}")
+
+        news_text = "\n".join(news_lines)
+        stats_text = "\n".join(stats_lines) if stats_lines else "（無未逐則分析快訊，統計請回 0 多 / 0 空 / 中性）"
+        prompt = f"""
+        你是一位資深金融市場分析師。請根據以下最新快訊，直接做「整體市場總覽」，
+        並同時估算左側儀表板需要的多空統計。
+
+        請只輸出 valid JSON，不要 markdown code block，不要額外文字。
+        JSON 結構：
+        {{
+            "summary_markdown": "繁體中文 Markdown，包含趨勢、風險、總結，精簡但有判斷",
+            "bullish_count": 0,
+            "bearish_count": 0,
+            "neutral_count": 0,
+            "total_count": 0,
+            "heat_score": 0-100,
+            "top_sectors": [
+                {{"name": "板塊名稱", "count": 1}}
+            ]
+        }}
+
+        統計規則：
+        - summary_markdown 請參考「總覽用快訊內容」的全部資料。
+        - bullish_count / bearish_count 只針對「統計用快訊內容」計算。
+        - neutral_count 是統計用快訊中沒有明確多空方向、影響有限、或資料不足的則數。
+        - total_count 必須等於統計用快訊內容的則數。
+        - bullish_count + bearish_count + neutral_count 必須等於 total_count。
+        - 統計用快訊內容只包含尚未逐則 AI 分析的快訊；不要把總覽用快訊中的已分析摘要重複計入。
+        - 對每則快訊判斷主要影響；未明確偏多或偏空者不要計入多/空，請計入 neutral_count。
+        - heat_score 以 50 為中性；越偏多越高，越偏空越低。
+        - top_sectors 最多 5 個，板塊名稱請用繁體中文。
+
+        總覽用快訊內容：
+        {news_text}
+
+        統計用快訊內容：
+        {stats_text}
+        """
+
+        try:
+            raw_content = self.ai_client.generate_content(prompt)
+            if not raw_content or raw_content.startswith("Error:"):
+                raise ValueError(raw_content or "AI empty response")
+
+            data = self._parse_json_object(raw_content)
+            stats = self._normalize_overview_stats(data, expected_total=total_stats_items)
+            summary = data.get("summary_markdown") or data.get("summary") or ""
+            if not summary:
+                summary = self.summarize_market(news_items)
+
+            return {"summary": summary.strip(), "stats": stats, "stats_valid": True}
+        except Exception as e:
+            logger.error(f"Market overview with stats failed: {e}")
+            return {
+                "summary": self.summarize_market(news_items),
+                "stats": self._empty_dashboard_stats(),
+                "stats_valid": False,
+            }
+
+    def _parse_json_object(self, raw_content: str) -> Dict[str, Any]:
+        cleaned = raw_content.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.split("\n")
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            cleaned = "\n".join(lines).strip()
+
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            import re
+            match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+            if not match:
+                raise
+            return json.loads(match.group(0))
+
+    def _normalize_overview_stats(self, data: Dict[str, Any], expected_total: int = None) -> Dict[str, Any]:
+        def as_int(value, default=0):
+            try:
+                return int(float(value))
+            except (TypeError, ValueError):
+                return default
+
+        sectors = []
+        for item in data.get("top_sectors", []) or []:
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("sector")
+                count = as_int(item.get("count"), 1)
+            elif isinstance(item, (list, tuple)) and item:
+                name = item[0]
+                count = as_int(item[1] if len(item) > 1 else 1, 1)
+            else:
+                name = str(item)
+                count = 1
+            if name:
+                sectors.append((str(name), max(count, 1)))
+
+        bullish = max(as_int(data.get("bullish_count")), 0)
+        bearish = max(as_int(data.get("bearish_count")), 0)
+        total = max(as_int(data.get("total_count"), expected_total or 0), 0)
+        neutral = max(as_int(data.get("neutral_count"), total - bullish - bearish), 0)
+
+        if expected_total is not None:
+            total = expected_total
+            neutral = max(total - bullish - bearish, 0)
+        elif total < bullish + bearish + neutral:
+            total = bullish + bearish + neutral
+
+        return {
+            "bullish": bullish,
+            "bearish": bearish,
+            "neutral": neutral,
+            "total": total,
+            "heat_score": min(max(as_int(data.get("heat_score"), 50), 0), 100),
+            "top_sectors": sectors[:5],
+        }
+
+    def _empty_dashboard_stats(self) -> Dict[str, Any]:
+        return {
+            "bullish": 0,
+            "bearish": 0,
+            "neutral": 0,
+            "total": 0,
+            "heat_score": 50,
+            "top_sectors": [],
+        }
+

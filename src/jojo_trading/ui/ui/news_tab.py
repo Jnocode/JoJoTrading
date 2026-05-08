@@ -24,14 +24,14 @@ class SentimentRatioBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(24)
-        self._bull_pct = 50
+        self._bull_count = 0
+        self._bear_count = 0
+        self._neutral_count = 0
         
-    def set_ratio(self, bull_count, bear_count):
-        total = bull_count + bear_count
-        if total == 0:
-            self._bull_pct = 50
-        else:
-            self._bull_pct = int((bull_count / total) * 100)
+    def set_ratio(self, bull_count, bear_count, neutral_count=0):
+        self._bull_count = max(int(bull_count or 0), 0)
+        self._bear_count = max(int(bear_count or 0), 0)
+        self._neutral_count = max(int(neutral_count or 0), 0)
         self.update()
         
     def paintEvent(self, event):
@@ -45,24 +45,26 @@ class SentimentRatioBar(QWidget):
         painter.setBrush(QColor("#424242"))
         painter.drawRoundedRect(0, 0, w, h, radius, radius)
         
+        total = self._bull_count + self._bear_count + self._neutral_count
+        if total > 0:
+            bear_w = int(w * (self._bear_count / total))
+            bull_w = int(w * (self._bull_count / total))
+
+            if bear_w > 0:
+                painter.setBrush(QColor("#388E3C"))
+                painter.drawRoundedRect(0, 0, bear_w, h, radius, radius)
+                painter.drawRect(max(0, bear_w - radius), 0, radius, h)
+
+            if bull_w > 0:
+                painter.setBrush(QColor("#D32F2F"))
+                x = w - bull_w
+                painter.drawRoundedRect(x, 0, bull_w, h, radius, radius)
+                painter.drawRect(x, 0, radius, h)
+
         mid_x = w // 2
-        target_x = int(w * (self._bull_pct / 100.0))
-        
-        if self._bull_pct > 50:
-            painter.setBrush(QColor("#D32F2F"))
-            if self._bull_pct == 100:
-                painter.drawRoundedRect(mid_x, 0, w - mid_x, h, radius, radius)
-                painter.drawRect(mid_x, 0, radius, h) # patch left side
-            else:
-                painter.drawRect(mid_x, 0, target_x - mid_x, h)
-        elif self._bull_pct < 50:
+        if total == 0:
             painter.setBrush(QColor("#388E3C"))
-            if self._bull_pct == 0:
-                painter.drawRoundedRect(0, 0, mid_x, h, radius, radius)
-                painter.drawRect(mid_x - radius, 0, radius, h) # patch right side
-            else:
-                painter.drawRect(target_x, 0, mid_x - target_x, h)
-                
+        
         # Center line
         painter.setBrush(QColor("#FFFFFF"))
         painter.drawRect(mid_x - 1, 0, 2, h)
@@ -134,19 +136,22 @@ class AnalyzeSequentialWorker(QThread):
         self._is_cancelled = True
 
 class MarketSummaryWorker(QThread):
-    """Background thread: generate market summary from analyzed items."""
+    """Background thread: generate market summary from loaded news items."""
     done = Signal(dict, str)  # (stats, summary_text)
     error_occurred = Signal(str)
 
-    def __init__(self, analyzed_items):
+    def __init__(self, summary_items, stats_items=None):
         super().__init__()
-        self.analyzed_items = analyzed_items
+        self.summary_items = summary_items
+        self.stats_items = stats_items or []
         self.controller = NewsController()
 
     def run(self):
         try:
-            stats = self.controller.calculate_dashboard_stats(self.analyzed_items)
-            summary = self.controller.get_market_summary(self.analyzed_items)
+            stats, summary = self.controller.get_market_summary_with_stats(
+                self.summary_items,
+                fallback_stats_items=self.stats_items,
+            )
             self.done.emit(stats, summary)
         except Exception as e:
             logger.error(f"[MarketSummaryWorker] Error generating summary: {e}", exc_info=True)
@@ -393,6 +398,8 @@ class NewsTab(QWidget):
         self.news_raw_data = {}  # Track raw data by news_id for on-demand analysis
         self.news_analyzed_data = {} # Track analyzed data
         self.seen_ids = set()   # Avoid duplicates on incremental refresh
+        self.summary_worker = None
+        self._pending_summary_refresh = False
         
         # Load persisted settings
         try:
@@ -505,10 +512,16 @@ class NewsTab(QWidget):
             
         card_bull, self.lbl_bull_count = make_stat_card("多頭 (Bullish)", "#D32F2F")
         card_bear, self.lbl_bear_count = make_stat_card("空頭 (Bearish)", "#388E3C")
+        card_neutral, self.lbl_neutral_count = make_stat_card("中性/未定 (Neutral)", "#757575")
         
         grid.addWidget(card_bull, 0, 0)
         grid.addWidget(card_bear, 0, 1)
+        grid.addWidget(card_neutral, 1, 0, 1, 2)
         stats_layout.addLayout(grid)
+
+        self.lbl_stats_total = QLabel("納入統計：— 則")
+        self.lbl_stats_total.setStyleSheet("color: #888; font-size: 12px; padding-left: 5px;")
+        stats_layout.addWidget(self.lbl_stats_total)
         
         # Top Sectors
         lbl_sector_title = QLabel("📊 熱門板塊")
@@ -525,6 +538,21 @@ class NewsTab(QWidget):
         title_layout.addWidget(lbl_summary_title)
         
         title_layout.addStretch()
+
+        self.chk_instant_summary = QCheckBox("即時總覽")
+        self.chk_instant_summary.setToolTip("抓到新快訊後自動產出 AI 分析總覽，不等待逐則分析")
+        self.chk_instant_summary.setCursor(QCursor(Qt.PointingHandCursor))
+        self.chk_instant_summary.setStyleSheet("color: #E0E0E0; font-weight: bold; margin-right: 6px;")
+        self.chk_instant_summary.toggled.connect(self._on_instant_summary_toggled)
+        try:
+            if self._db:
+                saved_summary = self._db.get_setting("news_instant_summary", "False")
+                self.chk_instant_summary.blockSignals(True)
+                self.chk_instant_summary.setChecked(saved_summary == "True")
+                self.chk_instant_summary.blockSignals(False)
+        except Exception:
+            pass
+        title_layout.addWidget(self.chk_instant_summary)
         
         self.btn_generate_summary = QPushButton("📊 產出總覽")
         self.btn_generate_summary.setCursor(QCursor(Qt.PointingHandCursor))
@@ -549,7 +577,7 @@ class NewsTab(QWidget):
         title_layout.setContentsMargins(0, 10, 0, 0)
         stats_layout.addLayout(title_layout)
         
-        self.lbl_summary = QLabel("👆 分析新聞後，點擊「📊 產出總覽」即可產生 AI 市場摘要")
+        self.lbl_summary = QLabel("👆 點擊「📊 產出總覽」即可直接統合目前快訊；不必等待逐則 AI 分析")
         self.lbl_summary.setTextFormat(Qt.MarkdownText)
         self.lbl_summary.setOpenExternalLinks(True)
         self.lbl_summary.setWordWrap(True)
@@ -826,6 +854,7 @@ class NewsTab(QWidget):
     def _on_items_fetched(self, items):
         """Incremental update: Check cache directly to skip pending state for cached items."""
         now_str = datetime.now().strftime("%H:%M:%S")
+        was_loading_more = self.is_loading_more
         
         new_items = []
         for i, item in enumerate(items):
@@ -887,6 +916,9 @@ class NewsTab(QWidget):
         # Update dashboard if any cached items were loaded
         self._update_realtime_stats()
 
+        if self._should_run_instant_summary(was_loading_more=was_loading_more, new_count=len(new_items)):
+            self._generate_market_summary(auto=True)
+
         # Auto-analyze if Instant Analysis is enabled
         if hasattr(self, 'chk_instant_analyze') and self.chk_instant_analyze.isChecked() and not self.is_loading_more:
             self._analyze_all_pending()
@@ -930,40 +962,100 @@ class NewsTab(QWidget):
         self.btn_analyze_all.setEnabled(True)
         self._cleanup_worker(worker)
 
-    def _generate_market_summary(self):
-        analyzed_items = list(self.news_analyzed_data.values())
-                
-        if not analyzed_items:
-            QMessageBox.information(self, "提示", "請先分析至少一則新聞，才能產出總覽。")
+    def _should_run_instant_summary(self, was_loading_more=False, new_count=0):
+        if new_count <= 0 or was_loading_more:
+            return False
+        return (
+            hasattr(self, 'chk_instant_summary')
+            and self.chk_instant_summary.isChecked()
+        )
+
+    def _generate_market_summary(self, auto=False):
+        auto = bool(auto)
+        if self.summary_worker and self.summary_worker.isRunning():
+            if auto:
+                self._pending_summary_refresh = True
+            return
+
+        summary_items = self._build_market_summary_items()
+        analyzed_items = [
+            item for item in summary_items
+            if item.get('analysis')
+        ]
+        raw_count = len(summary_items) - len(analyzed_items)
+
+        if not summary_items:
+            if not auto:
+                QMessageBox.information(self, "提示", "目前沒有可總覽的新聞。")
             return
             
-        self.btn_generate_summary.setText("⏳ 產生中...")
+        self.btn_generate_summary.setText("⏳ 即時總覽中..." if auto else "⏳ 產生中...")
         self.btn_generate_summary.setEnabled(False)
-        self.lbl_summary.setText("🤖 正在統合分析已處理的新聞，請稍候...")
+        self.lbl_summary.setText(
+            f"🤖 正在直接統合 {len(summary_items)} 則快訊"
+            f"（已分析 {len(analyzed_items)}，未分析 {raw_count}），請稍候..."
+        )
         
-        worker = MarketSummaryWorker(analyzed_items)
+        worker = MarketSummaryWorker(summary_items, stats_items=analyzed_items)
         worker.done.connect(self._on_summary_done)
         worker.error_occurred.connect(self._on_summary_error)
         self.summary_worker = worker 
         worker.start()
 
+    def _build_market_summary_items(self):
+        """
+        Build the source list for market overview without forcing per-item AI.
+
+        Already analyzed cards keep their AI summaries; pending cards contribute
+        their raw content directly, so high-frequency news can be summarized
+        immediately.
+        """
+        summary_items = []
+        for news_id, raw_item in self.news_raw_data.items():
+            analyzed_item = self.news_analyzed_data.get(news_id)
+            if analyzed_item:
+                summary_items.append(analyzed_item)
+                continue
+
+            item = dict(raw_item)
+            item.pop('analysis', None)
+            summary_items.append(item)
+        return summary_items
+
     def _on_summary_done(self, stats, summary):
         self.btn_generate_summary.setText("📊 產出總覽")
         self.btn_generate_summary.setEnabled(True)
+        self.summary_worker = None
         
         self.lbl_bull_count.setText(str(stats.get('bullish', 0)))
         self.lbl_bear_count.setText(str(stats.get('bearish', 0)))
-        self._set_heat_bar_score(stats.get('bullish', 0), stats.get('bearish', 0))
+        self.lbl_neutral_count.setText(str(stats.get('neutral', 0)))
+        self.lbl_stats_total.setText(f"納入統計：{stats.get('total', 0)} 則")
+        self._set_heat_bar_score(
+            stats.get('bullish', 0),
+            stats.get('bearish', 0),
+            stats.get('neutral', 0),
+        )
         sectors = [f"{s} ({c})" for s, c in stats.get('top_sectors', [])]
         self.lbl_sectors.setText("、".join(sectors) if sectors else "無集中板塊")
         
         self.lbl_summary.setText(summary)
+        self._run_pending_summary_if_needed()
 
     def _on_summary_error(self, err):
         self.btn_generate_summary.setText("📊 產出總覽")
         self.btn_generate_summary.setEnabled(True)
+        self.summary_worker = None
         self.lbl_summary.setText(f"❌ 總覽產生失敗: {err}")
         self.on_error(err)
+        self._run_pending_summary_if_needed()
+
+    def _run_pending_summary_if_needed(self):
+        if not self._pending_summary_refresh:
+            return
+        self._pending_summary_refresh = False
+        if hasattr(self, 'chk_instant_summary') and self.chk_instant_summary.isChecked():
+            QTimer.singleShot(100, lambda: self._generate_market_summary(auto=True))
 
     def _on_item_analyzed(self, news_id, analyzed_item):
         """Single item analysis complete: update its card."""
@@ -984,14 +1076,20 @@ class NewsTab(QWidget):
             stats = controller.calculate_dashboard_stats(analyzed_items)
             self.lbl_bull_count.setText(str(stats.get('bullish', 0)))
             self.lbl_bear_count.setText(str(stats.get('bearish', 0)))
-            self._set_heat_bar_score(stats.get('bullish', 0), stats.get('bearish', 0))
+            self.lbl_neutral_count.setText(str(stats.get('neutral', 0)))
+            self.lbl_stats_total.setText(f"納入統計：{stats.get('total', 0)} 則")
+            self._set_heat_bar_score(
+                stats.get('bullish', 0),
+                stats.get('bearish', 0),
+                stats.get('neutral', 0),
+            )
             sectors = [f"{s} ({c})" for s, c in stats.get('top_sectors', [])]
             self.lbl_sectors.setText("、".join(sectors) if sectors else "無集中板塊")
         except Exception as e:
             logger.error(f"Error updating realtime stats: {e}", exc_info=True)
 
-    def _set_heat_bar_score(self, bull_count: int, bear_count: int):
-        self.heat_gauge.set_ratio(bull_count, bear_count)
+    def _set_heat_bar_score(self, bull_count: int, bear_count: int, neutral_count: int = 0):
+        self.heat_gauge.set_ratio(bull_count, bear_count, neutral_count)
 
     def _cleanup_worker(self, worker):
         if worker in self.analyze_workers:
@@ -1015,6 +1113,16 @@ class NewsTab(QWidget):
         # Full clear + re-fetch with new data source
         self._clear_all()
         self._auto_fetch()
+
+    def _on_instant_summary_toggled(self, checked):
+        try:
+            if self._db:
+                self._db.set_setting("news_instant_summary", str(checked))
+        except Exception:
+            pass
+
+        if checked and self.news_raw_data:
+            self._generate_market_summary(auto=True)
 
     def _on_instant_analyze_toggled(self, checked):
         if checked:
@@ -1059,6 +1167,7 @@ class NewsTab(QWidget):
         self.news_raw_data = {}
         self.news_analyzed_data = {}
         self.seen_ids = set()
+        self._pending_summary_refresh = False
         for i in reversed(range(self.vbox_news.count())):
             w = self.vbox_news.itemAt(i).widget()
             if w:

@@ -79,7 +79,7 @@ def check_module_status():
         print("所有模組檢查通過！")
         return True
     
-    return False
+    assert False
 
 if __name__ == "__main__":
     success = check_module_status()

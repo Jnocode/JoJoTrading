@@ -98,7 +98,7 @@ def check_dcf_threshold_fix():
         print(f"❌ 無法檢查data_validator.py: {e}")
     
     print(f"\nDCF門檻修復檢查結果: {checks_passed}/{total_checks} 項通過")
-    return checks_passed >= 3
+    assert checks_passed >= 3
 
 def check_trading_system():
     """檢查交易系統組件"""
@@ -130,7 +130,7 @@ def check_trading_system():
             print(f"❌ {description}: 檔案不存在 ({file_path})")
     
     print(f"\n交易系統組件檢查結果: {components_ok}/{len(trading_components)} 項正常")
-    return components_ok >= 3
+    assert components_ok >= 3
 
 def check_main_app():
     """檢查主應用程式整合"""
@@ -139,7 +139,7 @@ def check_main_app():
     
     if not os.path.exists('main_app.py'):
         print("❌ main_app.py: 檔案不存在")
-        return False
+        assert False
     
     try:
         with open('main_app.py', 'r', encoding='utf-8') as f:
@@ -176,11 +176,11 @@ def check_main_app():
             print("❌ 頁面導航功能可能缺失")
         
         print(f"\n主應用程式檢查結果: {checks_passed}/{total_checks} 項正常")
-        return checks_passed >= 3
+        assert checks_passed >= 3
         
     except Exception as e:
         print(f"❌ 主應用程式檢查失敗: {e}")
-        return False
+        assert False
 
 def test_module_imports():
     """測試關鍵模組導入"""
@@ -309,7 +309,7 @@ def main():
         print(f"\n❌ 系統驗證過程發生錯誤: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False
 
 if __name__ == "__main__":
     success = main()

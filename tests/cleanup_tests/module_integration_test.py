@@ -102,7 +102,7 @@ def test_module_integration():
     else:
         print("\n❌ 系統需要進一步修復")
         print("🔧 請檢查失敗的模組")
-        return False
+        assert False
 
 def test_core_functionality():
     """測試核心功能是否可用"""

@@ -194,6 +194,7 @@ class NewsController:
         """
         bullish_count = 0
         bearish_count = 0
+        neutral_count = 0
         total_heat = 0
         analyzed_count = 0
         top_sectors = {}
@@ -204,6 +205,7 @@ class NewsController:
                 sent = analysis_result.get('sentiment', 'Neutral')
                 if sent == 'Bullish': bullish_count += 1
                 elif sent == 'Bearish': bearish_count += 1
+                else: neutral_count += 1
                 
                 score = analysis_result.get('heat_score', 0)
                 if isinstance(score, int):
@@ -227,6 +229,8 @@ class NewsController:
         return {
             'bullish': bullish_count,
             'bearish': bearish_count,
+            'neutral': neutral_count,
+            'total': bullish_count + bearish_count + neutral_count,
             'heat_score': avg_heat,
             'top_sectors': sorted(top_sectors.items(), key=lambda x: x[1], reverse=True)[:3]
         }
@@ -280,4 +284,87 @@ class NewsController:
         except Exception as e:
             logger.error(f"NewsController: Error generating market summary - {e}")
             return "無法產生大盤總覽。"
+
+    def get_market_summary_with_stats(
+        self,
+        summary_items: List[Dict[str, Any]],
+        fallback_stats_items: Optional[List[Dict[str, Any]]] = None,
+    ) -> Tuple[Dict[str, Any], str]:
+        """
+        Generate the AI overview and let the overview AI update dashboard stats.
+
+        If the structured overview cannot produce meaningful stats, fall back to
+        the existing per-item analyzed-news aggregation.
+        """
+        fallback_stats_items = fallback_stats_items or []
+        try:
+            logger.info("NewsController: Generating market summary with dashboard stats.")
+            pending_stats_items = [
+                item for item in summary_items
+                if not item.get("analysis")
+            ]
+            overview = self.analyzer.summarize_market_with_stats(
+                summary_items,
+                stats_items=pending_stats_items,
+            )
+            summary = overview.get("summary") or "無法產生大盤總覽。"
+            exact_stats = self.calculate_dashboard_stats(fallback_stats_items)
+
+            if not overview.get("stats_valid", False):
+                return exact_stats, summary
+
+            estimated_stats = overview.get("stats") if pending_stats_items else {}
+            return self._combine_dashboard_stats(
+                exact_stats,
+                estimated_stats or {},
+            ), summary
+        except Exception as e:
+            logger.error(f"NewsController: Error generating summary stats - {e}")
+            return self.calculate_dashboard_stats(fallback_stats_items), "無法產生大盤總覽。"
+
+    def _combine_dashboard_stats(
+        self,
+        exact_stats: Dict[str, Any],
+        estimated_stats: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        bullish = int(exact_stats.get("bullish", 0)) + int(estimated_stats.get("bullish", 0))
+        bearish = int(exact_stats.get("bearish", 0)) + int(estimated_stats.get("bearish", 0))
+        neutral = int(exact_stats.get("neutral", 0)) + int(estimated_stats.get("neutral", 0))
+        total = int(exact_stats.get("total", 0)) + int(estimated_stats.get("total", 0))
+        if total < bullish + bearish + neutral:
+            total = bullish + bearish + neutral
+
+        sectors = {}
+        for source in (exact_stats.get("top_sectors", []), estimated_stats.get("top_sectors", [])):
+            for item in source:
+                if isinstance(item, dict):
+                    name = item.get("name") or item.get("sector")
+                    count = item.get("count", 1)
+                elif isinstance(item, (list, tuple)) and item:
+                    name = item[0]
+                    count = item[1] if len(item) > 1 else 1
+                else:
+                    name = str(item)
+                    count = 1
+                if not name:
+                    continue
+                try:
+                    count = int(count)
+                except (TypeError, ValueError):
+                    count = 1
+                sectors[str(name)] = sectors.get(str(name), 0) + max(count, 1)
+
+        if total:
+            heat_score = int(50 + ((bullish - bearish) / total) * 50)
+        else:
+            heat_score = 50
+
+        return {
+            "bullish": max(bullish, 0),
+            "bearish": max(bearish, 0),
+            "neutral": max(neutral, 0),
+            "total": max(total, 0),
+            "heat_score": min(max(heat_score, 0), 100),
+            "top_sectors": sorted(sectors.items(), key=lambda x: x[1], reverse=True)[:5],
+        }
 

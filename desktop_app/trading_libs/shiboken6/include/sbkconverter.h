@@ -7,23 +7,21 @@
 #include "sbkpython.h"
 #include "sbkmodule.h"
 #include "shibokenmacros.h"
+#include "sbkenum.h"
+#include "basewrapper_p.h"
 
-#include <cstdint>
+#include <limits>
 #include <string>
-
-namespace Shiboken::Module
-{
-struct TypeInitStruct;
-}
 
 struct SbkObject;
 
 /**
- *  This is a convenience function identical to Python's PyObject_TypeCheck,
+ *  This is a convenience macro identical to Python's PyObject_TypeCheck,
  *  except that the arguments have swapped places, for the great convenience
  *  of generator.
  */
-LIBSHIBOKEN_API  bool SbkObject_TypeCheck(PyTypeObject *tp, PyObject *ob);
+#define SbkObject_TypeCheck(tp, ob) \
+        (Py_TYPE(ob) == (tp) || PyType_IsSubtype(Py_TYPE(ob), (tp)))
 
 extern "C"
 {
@@ -85,7 +83,7 @@ namespace Conversions {
 class LIBSHIBOKEN_API SpecificConverter
 {
 public:
-    enum Type : uint8_t
+    enum Type
     {
         InvalidConversion,
         CopyConversion,
@@ -95,16 +93,16 @@ public:
 
     explicit SpecificConverter(const char *typeName);
 
-    SbkConverter *converter() const { return m_converter; }
+    SbkConverter *converter() { return m_converter; }
     operator SbkConverter *() const { return m_converter; }
 
-    bool isValid() const { return m_type != InvalidConversion; }
+    bool isValid() { return m_type != InvalidConversion; }
     operator bool() const { return m_type != InvalidConversion; }
 
-    Type conversionType() const { return m_type; }
+    Type conversionType() { return m_type; }
 
-    PyObject *toPython(const void *cppIn) const;
-    void toCpp(PyObject *pyIn, void *cppOut) const;
+    PyObject *toPython(const void *cppIn);
+    void toCpp(PyObject *pyIn, void *cppOut);
 private:
     SbkConverter *m_converter;
     Type m_type;
@@ -201,7 +199,7 @@ LIBSHIBOKEN_API PyObject *copyToPython(const SbkConverter *converter, const void
 
 struct PythonToCppConversion
 {
-    enum Type : uint8_t {Invalid, Pointer, Value};
+    enum Type {Invalid, Pointer, Value};
 
     operator bool() const { return type != Invalid; }
 
@@ -431,6 +429,12 @@ template<> inline PyTypeObject *SbkType<std::nullptr_t>() { return Py_TYPE(&_Py_
 
 } // namespace Shiboken
 
-LIBSHIBOKEN_API bool SbkChar_Check(PyObject *X);
+#define SbkChar_Check(X) (PyNumber_Check(X) || Shiboken::String::checkChar(X))
+
+struct PySideQFlagsType;
+struct SbkQFlagsTypePrivate
+{
+    SbkConverter *converter;
+};
 
 #endif // SBK_CONVERTER_H

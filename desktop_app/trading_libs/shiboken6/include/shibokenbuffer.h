@@ -9,7 +9,7 @@
 
 namespace Shiboken::Buffer
 {
-    enum Type : uint8_t {
+    enum Type {
         ReadOnly,
         WriteOnly,
         ReadWrite

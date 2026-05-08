@@ -84,7 +84,7 @@ def test_imports():
     print(f"📊 測試結果: {success_count}/{total_count} 模組正常載入")
     print("=" * 50)
     
-    return success_count == total_count
+    assert success_count == total_count
 
 def test_dcf_functionality():
     """測試DCF功能"""
@@ -105,7 +105,7 @@ def test_dcf_functionality():
     except Exception as e:
         print(f"❌ DCF功能測試失敗: {e}")
         traceback.print_exc()
-        return False
+        assert False
 
 def test_trading_system():
     """測試交易系統功能"""
@@ -133,7 +133,7 @@ def test_trading_system():
     except Exception as e:
         print(f"❌ 交易系統功能測試失敗: {e}")
         traceback.print_exc()
-        return False
+        assert False
 
 def main():
     """主測試函數"""
@@ -166,7 +166,7 @@ def main():
     else:
         print("\n⚠️  系統存在問題，請檢查錯誤信息並修復後重新測試")
     
-    return overall_success
+    assert overall_success
 
 if __name__ == "__main__":
     main()

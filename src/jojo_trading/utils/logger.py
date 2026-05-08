@@ -4,9 +4,14 @@ from logging.handlers import RotatingFileHandler
 from datetime import datetime
 
 # Setup Logs Directory
-LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))), 'logs')
-if not os.path.exists(LOG_DIR):
-    os.makedirs(LOG_DIR)
+# logger.py lives at src/jojo_trading/utils/logger.py; parents[3] is the
+# project root. Keeping logs inside the project avoids permission issues when
+# tests are launched from different workspace folders.
+PROJECT_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..")
+)
+LOG_DIR = os.path.join(PROJECT_ROOT, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
 
 def setup_logger(name: str = "jojo_trading", log_file: str = "app.log", level=logging.INFO):
     """

@@ -1,0 +1,2 @@
+"""Legacy component package alias."""
+
