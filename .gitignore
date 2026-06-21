@@ -103,3 +103,19 @@ data_fetching.py
 dist/
 build/
 *.spec
+
+
+# Build artifacts (large binaries)
+build/
+*.exe
+*.pkg
+*.pyz
+
+# Vendored packages (install via pip instead)
+desktop_app/trading_libs/
+desktop_app/runtime_python/
+
+# Debug logs
+debug.log
+*.log
+src/jojo_trading/core/debug.log
