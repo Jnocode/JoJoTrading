@@ -4,7 +4,12 @@ numpy>=1.24.0
 scipy>=1.10.0
 requests>=2.31.0
 python-dotenv>=1.0.0
-FinMind>=1.8.0
+pydantic>=2.0.0
+sqlalchemy>=2.0.0
+psutil>=5.9.0
+streamlit>=1.30.0
+PySide6>=6.5.0
+FinMind>=2.0.4
 matplotlib>=3.7.0
 seaborn>=0.12.0
 plotly>=5.18.0
@@ -14,7 +19,9 @@ xlsxwriter>=3.1.0
 python-dateutil>=2.8.0
 
 # 技術分析庫
-ta>=0.5.25
+# FinMind 2.x requires ta>=0.11,<1. Pin the lower bound high enough to avoid
+# pip resolver backtracking into legacy FinMind/pandas combinations.
+ta>=0.11.0,<1.0.0
 
 # XBRL 處理相關依賴
 beautifulsoup4>=4.12.0
@@ -25,3 +32,4 @@ urllib3>=2.0.0
 certifi>=2023.7.22
 fpdf>=1.7.2
 groq>=0.5.0
+google-generativeai>=0.5.0
