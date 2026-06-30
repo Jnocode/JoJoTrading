@@ -1,0 +1,3 @@
+-r requirements/base.txt
+-r requirements/dev.txt
+# Extra CI tools are installed by GitHub Actions workflows where needed.

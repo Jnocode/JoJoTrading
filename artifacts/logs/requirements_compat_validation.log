@@ -1,0 +1,4 @@
+=== requirements validation ===
+requirements.txt exists
+base include ok
+dev include ok
