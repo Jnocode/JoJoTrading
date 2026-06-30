@@ -1,0 +1,14 @@
+=== validate docs/index.html ===
+docs/index.html exists
+title ok
+chart section ok
+orders table ok
+github link ok
+cake link ok
+=== README ===
+README demo link ok
+=== git status ===
+ M README.md
+?? .venv2/
+?? artifacts/plan_jojo_github_pages_demo.md
+?? docs/index.html

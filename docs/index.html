@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JoJoTrading Demo — Quant Backtesting & AI Review</title>
+  <meta name="description" content="JoJoTrading static demo: event-driven backtesting, order schema, equity curve, and AI Agent strategy review workflow." />
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: rgba(15, 23, 42, .86);
+      --panel-2: rgba(30, 41, 59, .78);
+      --text: #e5eefb;
+      --muted: #94a3b8;
+      --green: #22c55e;
+      --cyan: #38bdf8;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --line: rgba(148, 163, 184, .22);
+      --shadow: 0 24px 70px rgba(0,0,0,.35);
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 20% 10%, rgba(56, 189, 248, .20), transparent 34%),
+        radial-gradient(circle at 80% 0%, rgba(34, 197, 94, .16), transparent 28%),
+        linear-gradient(135deg, #020617 0%, var(--bg) 50%, #0f172a 100%);
+      min-height: 100vh;
+    }
+    a { color: #7dd3fc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { width: min(1180px, calc(100% - 36px)); margin: 0 auto; }
+    header { padding: 56px 0 28px; }
+    nav { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 52px; }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; letter-spacing: .4px; }
+    .logo {
+      width: 42px; height: 42px; border-radius: 14px;
+      background: linear-gradient(135deg, var(--green), var(--cyan));
+      box-shadow: 0 0 30px rgba(56,189,248,.34);
+      display: grid; place-items: center; color: #04111f; font-weight: 900;
+    }
+    .links { display: flex; gap: 12px; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 14px; border: 1px solid var(--line); border-radius: 999px;
+      background: rgba(15,23,42,.62); color: var(--text); font-weight: 650;
+    }
+    .btn.primary { background: linear-gradient(135deg, rgba(34,197,94,.92), rgba(56,189,248,.86)); color: #02111f; border: 0; }
+    .hero { display: grid; grid-template-columns: 1.05fr .95fr; gap: 32px; align-items: center; }
+    .eyebrow { color: #86efac; font-weight: 800; text-transform: uppercase; letter-spacing: .16em; font-size: 13px; }
+    h1 { font-size: clamp(42px, 6vw, 78px); line-height: .96; margin: 14px 0 18px; letter-spacing: -2.4px; }
+    .lead { color: #cbd5e1; font-size: 19px; line-height: 1.75; max-width: 720px; }
+    .hero-card, .card {
+      border: 1px solid var(--line); border-radius: 28px; background: var(--panel);
+      box-shadow: var(--shadow); backdrop-filter: blur(16px);
+    }
+    .hero-card { padding: 28px; }
+    .terminal {
+      border-radius: 20px; overflow: hidden; background: #020617; border: 1px solid rgba(148,163,184,.2);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    .dots { display:flex; gap:8px; padding: 14px; border-bottom:1px solid rgba(148,163,184,.14); }
+    .dot { width:11px; height:11px; border-radius:50%; background:#64748b; }
+    .dot:nth-child(1){background:#ef4444}.dot:nth-child(2){background:#f59e0b}.dot:nth-child(3){background:#22c55e}
+    .term-body { padding: 18px; color: #d1fae5; font-size: 13px; line-height: 1.75; }
+    .grid { display:grid; gap:18px; }
+    .metrics { grid-template-columns: repeat(4, 1fr); margin: 34px 0; }
+    .metric { padding: 22px; border-radius: 22px; background: var(--panel-2); border:1px solid var(--line); }
+    .metric .num { font-size: 34px; font-weight: 900; color: #f8fafc; }
+    .metric .label { color: var(--muted); margin-top: 4px; }
+    section { padding: 30px 0; }
+    h2 { font-size: 34px; margin: 0 0 18px; letter-spacing: -1px; }
+    .two { grid-template-columns: 1.2fr .8fr; }
+    .card { padding: 24px; }
+    .chart { height: 310px; position: relative; border-radius: 20px; background: linear-gradient(180deg, rgba(15,23,42,.8), rgba(2,6,23,.7)); overflow: hidden; border:1px solid rgba(148,163,184,.16); }
+    .chart svg { width:100%; height:100%; display:block; }
+    .chip-row { display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }
+    .chip { padding:8px 11px; border-radius:999px; background:rgba(56,189,248,.12); border:1px solid rgba(56,189,248,.24); color:#bae6fd; font-size: 13px; font-weight:650; }
+    table { width:100%; border-collapse: collapse; overflow:hidden; border-radius:16px; font-size:14px; }
+    th, td { padding: 13px 12px; border-bottom:1px solid rgba(148,163,184,.16); text-align:left; }
+    th { color:#bfdbfe; background:rgba(30,41,59,.75); }
+    td { color:#dbeafe; }
+    .buy { color:#86efac; font-weight:800; } .sell { color:#fca5a5; font-weight:800; }
+    .flow { display:grid; grid-template-columns: repeat(5, 1fr); gap:12px; align-items:stretch; }
+    .node { padding:18px 14px; border-radius:18px; background:rgba(15,23,42,.84); border:1px solid var(--line); min-height:108px; }
+    .node b { display:block; margin-bottom:8px; color:#f8fafc; }
+    .node span { color:var(--muted); font-size:13px; line-height:1.55; }
+    .arrow { display:none; }
+    .note { color:var(--muted); line-height:1.75; }
+    footer { color:var(--muted); padding: 38px 0 56px; border-top:1px solid rgba(148,163,184,.14); margin-top:34px; }
+    @media (max-width: 900px) {
+      .hero, .two, .metrics, .flow { grid-template-columns: 1fr; }
+      nav { align-items:flex-start; flex-direction:column; }
+      h1 { letter-spacing:-1px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="wrap">
+    <nav>
+      <div class="brand"><div class="logo">JJ</div><div>JoJoTrading Demo</div></div>
+      <div class="links">
+        <a class="btn primary" href="https://github.com/Jnocode/JoJoTrading">GitHub Repo</a>
+        <a class="btn" href="https://www.cake.me/portfolios/jojotrader-pine-backtester">Cake Portfolio</a>
+        <a class="btn" href="#architecture">Architecture</a>
+      </div>
+    </nav>
+    <div class="hero">
+      <div>
+        <div class="eyebrow">Quant Backtesting × AI Agent Review</div>
+        <h1>台股期權事件驅動回測展示</h1>
+        <p class="lead">JoJoTrading 是一個量化交易研究專案，重點不是展示真實下單，而是展示如何把策略訊號、訂單 schema、回測績效與 AI Agent 審計流程串成可維護、可驗證的工程系統。</p>
+        <div class="chip-row">
+          <span class="chip">Python</span><span class="chip">Pandas</span><span class="chip">SQLite</span><span class="chip">TradingView Pine</span><span class="chip">Backtesting</span><span class="chip">AI Agent Review</span>
+        </div>
+      </div>
+      <div class="hero-card">
+        <div class="terminal">
+          <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <div class="term-body">
+            $ python scripts/backtest_demo.py<br>
+            ✓ Load TSMC / semiconductor watchlist<br>
+            ✓ Generate moving-average crossover signals<br>
+            ✓ Simulate orders + risk rules<br>
+            ✓ Export equity curve + performance report<br>
+            ✓ AI Agent reviews overfitting / drawdown risk
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="grid metrics">
+      <div class="metric"><div class="num">+18.7%</div><div class="label">Sample Total Return</div></div>
+      <div class="metric"><div class="num">-7.9%</div><div class="label">Max Drawdown</div></div>
+      <div class="metric"><div class="num">57%</div><div class="label">Win Rate</div></div>
+      <div class="metric"><div class="num">1.31</div><div class="label">Sharpe Ratio</div></div>
+    </div>
+
+    <section class="grid two">
+      <div class="card">
+        <h2>Backtest Equity Curve</h2>
+        <p class="note">示範資料：用來展示報告格式，不代表投資建議或真實收益保證。</p>
+        <div class="chart" aria-label="equity curve chart">
+          <svg viewBox="0 0 800 310" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#22c55e" stop-opacity=".40"/><stop offset="100%" stop-color="#22c55e" stop-opacity="0"/></linearGradient>
+            </defs>
+            <g stroke="rgba(148,163,184,.18)" stroke-width="1">
+              <line x1="0" y1="60" x2="800" y2="60"/><line x1="0" y1="120" x2="800" y2="120"/><line x1="0" y1="180" x2="800" y2="180"/><line x1="0" y1="240" x2="800" y2="240"/>
+            </g>
+            <path d="M0,250 C80,242 100,214 150,220 C210,228 230,174 280,180 C340,185 360,130 420,142 C480,154 510,94 570,104 C630,112 650,72 705,78 C755,84 770,52 800,48 L800,310 L0,310 Z" fill="url(#area)"/>
+            <path d="M0,250 C80,242 100,214 150,220 C210,228 230,174 280,180 C340,185 360,130 420,142 C480,154 510,94 570,104 C630,112 650,72 705,78 C755,84 770,52 800,48" fill="none" stroke="#22c55e" stroke-width="5"/>
+          </svg>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Strategy Summary</h2>
+        <p class="note">策略展示：半導體籃子股動能輪動 + 移動平均濾網 + 固定風險單位。重點是資料流、測試結構與報告產出，而非推薦任何交易。</p>
+        <div class="chip-row">
+          <span class="chip">Event-driven engine</span><span class="chip">Order schema</span><span class="chip">Risk checks</span><span class="chip">Report artifacts</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Sample Orders Table</h2>
+      <table>
+        <thead><tr><th>Date</th><th>Symbol</th><th>Action</th><th>Price</th><th>Qty</th><th>Risk Note</th></tr></thead>
+        <tbody>
+          <tr><td>2026-01-08</td><td>2330.TW</td><td class="buy">BUY</td><td>586.0</td><td>1</td><td>Breakout + sector momentum</td></tr>
+          <tr><td>2026-02-14</td><td>2330.TW</td><td class="sell">SELL</td><td>642.0</td><td>1</td><td>Trailing stop hit</td></tr>
+          <tr><td>2026-03-05</td><td>2454.TW</td><td class="buy">BUY</td><td>812.0</td><td>1</td><td>MA crossover confirmation</td></tr>
+          <tr><td>2026-04-21</td><td>2454.TW</td><td class="sell">SELL</td><td>874.0</td><td>1</td><td>Profit target reached</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="architecture" class="card">
+      <h2>System Architecture</h2>
+      <div class="flow">
+        <div class="node"><b>Market Data</b><span>FinMind / TWSE / local CSV cache, normalized into research-ready dataframes.</span></div>
+        <div class="node"><b>Signal Engine</b><span>Trading rules, feature generation, and parameter scanning.</span></div>
+        <div class="node"><b>Backtest Core</b><span>Event-driven order simulation, position state, fees, and risk rules.</span></div>
+        <div class="node"><b>Report Layer</b><span>Equity curve, order table, metrics, and exported artifacts.</span></div>
+        <div class="node"><b>AI Review</b><span>Agent checks overfitting, assumptions, failure modes, and next experiments.</span></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Why this matters</h2>
+      <p class="note">這個 demo 是求職展示版：它證明我能把資料處理、交易規則、回測驗證、CI/CD 與 AI Agent 審計整合成一個可看、可跑、可維護的工程作品。完整交易憑證與 live broker API 不會放在公開 demo。</p>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <div>© JoJoTrading Demo. Built for portfolio review. No investment advice.</div>
+  </footer>
+</body>
+</html>

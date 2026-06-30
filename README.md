@@ -4,6 +4,11 @@
 
 > ⚠️ 此專案曾為私有，首次公開。部分 vendor 套件仍在清理中。
 
+## Live Demo
+
+- GitHub Pages: https://jnocode.github.io/JoJoTrading/
+- Cake Portfolio: https://www.cake.me/portfolios/jojotrader-pine-backtester
+
 ---
 
 ## 功能
