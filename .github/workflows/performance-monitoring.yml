@@ -141,8 +141,8 @@ jobs:
                 
         EOF
         
-        # 執行負載測試
-        locust -f locustfile.py \
+        # 執行負載測試 (使用 python3 -m locust 避免 PATH 找不到指令的錯誤)
+        python3 -m locust -f locustfile.py \
           --host=http://localhost:8501 \
           --users=${{ github.event.inputs.concurrent_users || '10' }} \
           --spawn-rate=2 \
