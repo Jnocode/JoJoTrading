@@ -60,34 +60,13 @@ jobs:
         # 更新版本
         case "${{ github.event.inputs.version_type }}" in
           "major")
-            new_version=$(python -c "
-import re
-v = '$current_version'
-parts = v.split('.')
-parts[0] = str(int(parts[0]) + 1)
-parts[1] = '0'
-parts[2] = '0'
-print('.'.join(parts))
-")
+            new_version=$(python -c "v='$current_version'; p=v.split('.'); p[0]=str(int(p[0])+1); p[1]='0'; p[2]='0'; print('.'.join(p))")
             ;;
           "minor")
-            new_version=$(python -c "
-import re
-v = '$current_version'
-parts = v.split('.')
-parts[1] = str(int(parts[1]) + 1)
-parts[2] = '0'
-print('.'.join(parts))
-")
+            new_version=$(python -c "v='$current_version'; p=v.split('.'); p[1]=str(int(p[1])+1); p[2]='0'; print('.'.join(p))")
             ;;
           "patch")
-            new_version=$(python -c "
-import re
-v = '$current_version'
-parts = v.split('.')
-parts[2] = str(int(parts[2]) + 1)
-print('.'.join(parts))
-")
+            new_version=$(python -c "v='$current_version'; p=v.split('.'); p[2]=str(int(p[2])+1); print('.'.join(p))")
             ;;
         esac
         

@@ -16,7 +16,7 @@ MESSAGES = {
         "no": "否",
         "error": "錯誤",
         "success": "成功",
-        "select_language": "選擇語言"
+        "select_language": "選擇語言",
     },
     "en": {
         "welcome": "Welcome to JoJoTrading",
@@ -35,9 +35,10 @@ MESSAGES = {
         "no": "No",
         "error": "Error",
         "success": "Success",
-        "select_language": "Select Language"
-    }
+        "select_language": "Select Language",
+    },
 }
+
 
 def t(key, lang="zh"):
     """
