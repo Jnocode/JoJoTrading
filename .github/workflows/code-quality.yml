@@ -32,23 +32,23 @@ jobs:
         
     - name: 🎨 Check Black formatting
       run: |
-        black --check --diff src tests test_*.py setup.py || {
+        black --check --diff src tests setup.py test_adapter.py test_finmind.py || {
           echo "❌ 代碼格式不符合 Black 標準"
-          echo "🔧 執行以下命令修正: black src tests test_*.py setup.py"
+          echo "🔧 執行以下命令修正: black src tests setup.py test_adapter.py test_finmind.py"
           echo "⚠️ Formatting report only; not blocking CI for legacy code."
         }
         
     - name: 📐 Check import sorting
       run: |
-        isort --check-only --diff src tests test_*.py setup.py || {
+        isort --check-only --diff src tests setup.py test_adapter.py test_finmind.py || {
           echo "❌ import 排序不正確"
-          echo "🔧 執行以下命令修正: isort src tests test_*.py setup.py"
+          echo "🔧 執行以下命令修正: isort src tests setup.py test_adapter.py test_finmind.py"
           echo "⚠️ Import-sort report only; not blocking CI for legacy code."
         }
         
     - name: 🔍 Flake8 linting
       run: |
-        flake8 src tests test_*.py setup.py --count --statistics \
+        flake8 src tests setup.py test_adapter.py test_finmind.py --count --statistics \
           --select=E9,F63,F7 \
           --max-line-length=88 \
           --extend-ignore=E203,W503 \
