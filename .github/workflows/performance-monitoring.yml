@@ -110,7 +110,7 @@ jobs:
         
     - name: 📊 Install load testing tools
       run: |
-        pip install locust requests
+        pip install locust requests zope.event zope.interface
         
     - name: 🏋️‍♂️ Run load tests
       run: |
