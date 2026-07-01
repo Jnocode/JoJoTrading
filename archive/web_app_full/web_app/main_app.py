@@ -48,8 +48,9 @@ except Exception as e:
 # -----------------------------------------------------------------------------
 # 添加 src 和 scripts 路徑
 current_dir = os.path.dirname(os.path.abspath(__file__))
-src_path = os.path.join(current_dir, '..', 'src')
-scripts_path = os.path.join(current_dir, '..', 'scripts')
+project_root = os.path.abspath(os.path.join(current_dir, '..', '..'))
+src_path = os.path.join(project_root, 'src')
+scripts_path = os.path.join(project_root, 'scripts')
 
 if src_path not in sys.path:
     sys.path.insert(0, src_path)

@@ -26,7 +26,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.jojo_trading.ui.app import main as streamlit_main
+from src.jojo_trading.ui.main_desktop import main as desktop_main
 from src.jojo_trading.core.state_machine import JoJoStateMachine
 
 
@@ -39,26 +39,44 @@ def run_cli():
     machine = JoJoStateMachine()
     
     print("📊 系統初始化完成")
-    print("💡 提示: Web 介面模式請執行: python -m jojo_trading.main")
+    print("💡 提示: 桌面介面模式請執行: python -m jojo_trading.main")
+    print("💡 提示: Web 介面模式請執行: python -m jojo_trading.main --web")
     
     # TODO: 實現完整的 CLI 介面
-    print("⚠️  CLI 模式開發中，請使用 Web 介面")
+    print("⚠️  CLI 模式開發中，請使用桌面或 Web 介面")
+
+
+def run_desktop():
+    """啟動 PySide6 桌面應用程式"""
+    print("🚀 啟動 JoJo Trading 桌面應用程式...")
+    desktop_main()
 
 
 def run_web():
     """Streamlit Web 應用程式模式"""
     print("🚀 啟動 JoJo Trading Web 應用程式...")
-    streamlit_main()
+    import subprocess
+    app_path = PROJECT_ROOT / "archive" / "web_app_full" / "web_app" / "main_app.py"
+    if not app_path.exists():
+        print(f"❌ 找不到 Web 應用程式檔案: {app_path}")
+        sys.exit(1)
+        
+    cmd = [sys.executable, "-m", "streamlit", "run", str(app_path)]
+    try:
+        subprocess.run(cmd)
+    except KeyboardInterrupt:
+        print("\n👋 Web 應用程式已停止")
 
 
 def main():
     """主函數"""
     parser = argparse.ArgumentParser(
-        description="JoJo Trading 台股 DCF 估值系統",
+        description="JoJo Trading 台股 DCF 估值與期權回測系統",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 範例:
-  %(prog)s                    # 啟動 Web 應用程式
+  %(prog)s                    # 啟動桌面應用程式 (預設)
+  %(prog)s --web              # 啟動 Web 應用程式
   %(prog)s --cli              # 命令列模式
   %(prog)s --version          # 顯示版本資訊
         """
@@ -68,6 +86,12 @@ def main():
         "--cli",
         action="store_true",
         help="使用命令列介面模式"
+    )
+    
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="使用 Streamlit Web 介面模式"
     )
     
     parser.add_argument(
@@ -81,8 +105,10 @@ def main():
     try:
         if args.cli:
             run_cli()
-        else:
+        elif args.web:
             run_web()
+        else:
+            run_desktop()
     except KeyboardInterrupt:
         print("\n👋 程式已中止")
         sys.exit(0)

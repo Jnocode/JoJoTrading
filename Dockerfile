@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y \
 
 # 複製依賴文件
 COPY requirements.txt pyproject.toml ./
+COPY requirements/ ./requirements/
 
 # 升級 pip 並安裝 Python 依賴
 RUN pip install --upgrade pip && \
@@ -47,5 +48,9 @@ EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
+# 設置環境變數以支援從歸檔路徑啟動時載入核心模組
+ENV PYTHONPATH=/app/src:/app/scripts
+
 # 啟動命令
-CMD ["streamlit", "run", "main_app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.enableCORS=false", "--server.enableXsrfProtection=false"]
+CMD ["streamlit", "run", "archive/web_app_full/web_app/main_app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.enableCORS=false", "--server.enableXsrfProtection=false"]
+

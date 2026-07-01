@@ -31,12 +31,12 @@ def test_imports():
     except Exception as e:
         test_results.append(("❌", "Streamlit", f"失敗: {e}"))
     
-    # 測試DCF分析UI
+    # 測試桌面版UI (PySide6)
     try:
-        from src.jojo_trading.ui.app import main as dcf_main
-        test_results.append(("✅", "DCF分析UI", "成功"))
+        from src.jojo_trading.ui.main_desktop import MainWindow
+        test_results.append(("✅", "桌面版UI (PySide6)", "成功"))
     except Exception as e:
-        test_results.append(("❌", "DCF分析UI", f"失敗: {e}"))
+        test_results.append(("❌", "桌面版UI (PySide6)", f"失敗: {e}"))
     
     # 測試交易系統UI
     try:
@@ -92,8 +92,9 @@ def test_dcf_functionality():
     print("=" * 30)
     
     try:
-        from jojo_trading.core.data_handler import main as data_main
-        print("✅ data_handler.py 導入成功")
+        from jojo_trading.core.data_handler import DataHandler
+        handler = DataHandler()
+        print("✅ DataHandler 初始化成功")
         
         # 測試基本配置
         from src.jojo_trading.utils.config_loader import ConfigLoader
@@ -120,7 +121,7 @@ def test_trading_system():
         
         # 測試AI建議引擎初始化
         from src.jojo_trading.trading.ai_advisor import AITradingAdvisor
-        advisor = AITradingAdvisor()
+        advisor = AITradingAdvisor(trade_recorder=recorder)
         print("✅ AITradingAdvisor 初始化成功")
         
         # 測試信號生成器初始化

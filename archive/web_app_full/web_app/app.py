@@ -26,7 +26,8 @@ from datetime import datetime
 
 # 添加 src 目錄到 Python 路徑
 current_dir = Path(__file__).parent
-src_path = current_dir / ".." / "src"
+project_root = current_dir.parent.parent
+src_path = project_root / "src"
 if src_path.exists():
     sys.path.insert(0, str(src_path))
 
