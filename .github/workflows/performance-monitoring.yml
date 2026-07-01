@@ -4,6 +4,9 @@
 name: 📊 Performance Monitoring
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     - cron: '0 */6 * * *'  # 每6小時執行一次
   workflow_dispatch:
