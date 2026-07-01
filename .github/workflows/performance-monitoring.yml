@@ -110,7 +110,9 @@ jobs:
         
     - name: 📊 Install load testing tools
       run: |
-        pip install locust requests zope.event zope.interface
+        python3 -m venv venv_locust
+        ./venv_locust/bin/pip install --upgrade pip
+        ./venv_locust/bin/pip install locust requests
         
     - name: 🏋️‍♂️ Run load tests
       run: |
@@ -152,7 +154,7 @@ jobs:
         
         # 執行負載測試並捕獲日誌
         echo "=== Running Locust ==="
-        python3 -m locust -f locustfile.py \
+        ./venv_locust/bin/locust -f locustfile.py \
           --host=http://localhost:8501 \
           --users=${{ github.event.inputs.concurrent_users || '10' }} \
           --spawn-rate=2 \
