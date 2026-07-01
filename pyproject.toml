@@ -92,6 +92,11 @@ extend-exclude = '''
   | \.mypy_cache
   | \.tox
   | \.venv
+  | \.venv2
+  | archive
+  | docs
+  | PROJECT_HANDOVER
+  | artifacts
   | build
   | dist
 )/
